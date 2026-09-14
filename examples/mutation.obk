@@ -1,0 +1,30 @@
+// Obfusku Canonical Example: Mutable Cells and Rebinding
+//
+// Demonstrates:
+// 1. Declaring top-level mutable cells using `≔˚`.
+// 2. Rebinding mutable cells with `⚙︎`.
+// 3. Capturing mutable cells in closures via explicit capture sigil `˚`.
+// 4. Local mutable bindings chained with LocalBinding syntax.
+
+// Top-level mutable cell
+counter ≔˚ 10
+
+// A closure explicitly capturing 'counter' to mutate it in place
+λbump(step: ⟁): ∅ → ˚counter ⚙︎ counter ✚ step
+
+// Invoke the closure to mutate the captured cell
+step1 ≔ bump(15)
+step2 ≔ bump(25)
+
+// Local mutable cell demonstration:
+// Local bindings take the form `name ≔ expr \n continuation`.
+// Because `x ⚙︎ val` evaluates to Unit (∅), we bind it to a discard name.
+localCalculation ≔ (
+  x ≔˚ 5
+  discard ≔ x ⚙︎ x ✱ 4
+  x
+)
+
+// The final result combines top-level mutated counter (50) and local cell (20)
+result ≔ counter ✚ localCalculation
+❧

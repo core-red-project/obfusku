@@ -1,0 +1,29 @@
+// ═══════════════════════════════════════════════════════════════
+// Recursion and Tail-Call Optimization in Obfusku
+// Demonstrates: Tail recursion, constant stack space, and mutual recursion
+// ═══════════════════════════════════════════════════════════════
+
+// Tail-recursive factorial with accumulator (executes in constant stack space)
+λfactAcc(n: ⟁, acc: ⟁): ⟁ →
+    ⟡ (n <= 1) {
+        ◉ → acc
+        ⟢ ◎ → factAcc(n ☠︎ 1, acc ✱ n)
+    }
+
+λfactorial(n: ⟁): ⟁ → factAcc(n, 1)
+
+// Tail-recursive Fibonacci sequence
+λfibAcc(n: ⟁, a: ⟁, b: ⟁): ⟁ →
+    ⟡ (n == 0) {
+        ◉ → a
+        ⟢ ◎ → fibAcc(n ☠︎ 1, b, a ✚ b)
+    }
+
+λfibonacci(n: ⟁): ⟁ → fibAcc(n, 0, 1)
+
+// Compute values
+fact6 ≔ factorial(6)
+fib10 ≔ fibonacci(10)
+
+result ≔ fact6 ✚ fib10
+❧

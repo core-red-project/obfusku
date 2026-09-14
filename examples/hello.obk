@@ -1,0 +1,14 @@
+// ═══════════════════════════════════════════════════════════════
+// Hello World in Obfusku
+// Demonstrates: Minimal executable program, string literals, and ambient I/O
+// ═══════════════════════════════════════════════════════════════
+
+// Bind greeting string
+greeting ≔ "Hello, World!"
+
+// Invoke native print capability
+printed ≔ print(greeting)
+
+// Reported value of the program
+result ≔ greeting
+❧

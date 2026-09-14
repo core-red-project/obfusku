@@ -1,0 +1,18 @@
+List t ≔ { Nil ⟢ Cons(t, List ▷ t) }
+
+λmap(f: t → u, xs: List ▷ t): List ▷ u → ⟡ xs {
+  Nil → Nil
+  ⟢ Cons(h, tl) → Cons(f(h), map(f, tl))
+}
+λfilter(f: t → ○, xs: List ▷ t): List ▷ t → ⟡ xs {
+  Nil → Nil
+  ⟢ Cons(h, tl) → ⟡ f(h) {
+    ◉ → Cons(h, filter(f, tl))
+    ⟢ ◎ → filter(f, tl)
+  }
+}
+λfold(f: u → t → u, acc: u, xs: List ▷ t): u → ⟡ xs {
+  Nil → acc
+  ⟢ Cons(h, tl) → fold(f, f(acc, h), tl)
+}
+❧

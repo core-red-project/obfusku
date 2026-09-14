@@ -1,129 +1,99 @@
 # Contributing to Obfusku
 
-Thank you for your interest in contributing to Obfusku — The Magical Programming Language.
-
-## Ways to Contribute
-
-### 1. Proposing New Symbols
-
-Obfusku is a symbol-driven language. New symbols must:
-
-- **Have visual meaning**: The glyph should visually suggest its purpose
-- **Not conflict**: Must not overlap with existing symbols
-- **Be Unicode-compatible**: Should render properly across platforms
-- **Follow ritual philosophy**: Fit the mystical nature of the language
-
-**Process**:
-1. Open an issue titled `[Symbol Proposal] <symbol> — <meaning>`
-2. Include:
-   - The proposed symbol(s)
-   - Semantic meaning
-   - Example usage
-   - Justification for visual choice
-3. Wait for discussion and approval before implementing
-
-### 2. Adding Examples
-
-Example programs help others learn Obfusku. Good examples:
-
-- Demonstrate a single concept clearly
-- Include comments explaining each symbol
-- End with `❧` (seal the ritual)
-- Are placed in `examples/` folder
-
-**Process**:
-1. Create a new `.obk` file in `examples/`
-2. Add a header comment explaining the purpose
-3. Test with `obfusku run examples/your_file.obk`
-4. Submit a pull request
-
-### 3. Fixing Bugs
-
-Bug fixes are always welcome. Please:
-
-1. Check existing issues first
-2. Create an issue describing the bug
-3. Include reproduction steps
-4. Submit a PR referencing the issue
-
-### 4. Improving Documentation
-
-Documentation lives in `grimoires/`. Improvements should:
-
-- Be accurate to the current implementation
-- Not describe speculative features
-- Maintain the professional yet mystical tone
-- Include correct symbol usage
+Contributions are welcome — bugs, fixes, features, or documentation.
+This document covers how to work with the project as a contributor.
 
 ---
 
-## Rules for Language Semantics
+## Before You Start
 
-### v1.0.x is FROZEN
-
-The core language semantics are now locked. This means:
-
-- ❌ No changes to existing symbol meanings
-- ❌ No breaking syntax changes
-- ❌ No VM behavior modifications
-- ✅ Bug fixes that restore intended behavior
-- ✅ Performance improvements
-- ✅ Error message improvements
-
-### Proposing New Features
-
-New features (v1.1.0+) must:
-
-1. Be proposed as an issue with `[Feature Proposal]` prefix
-2. Include design rationale
-3. Show how it fits Obfusku philosophy
-4. Not break backward compatibility
-5. Be approved before implementation
+- Search [existing issues](https://github.com/core-red-project/obfusku/issues) before opening a new one.
+- For significant changes, open an issue first to discuss the direction before writing code.
+- Read the [Code of Conduct](CODE_OF_CONDUCT.md). It applies to all interactions in this project.
 
 ---
 
-## Code Style
+## Reporting a Bug
 
-### Rust Code
+Open a [GitHub Issue](https://github.com/core-red-project/obfusku/issues/new/choose) using the bug report template.
 
-- Use `rustfmt` for formatting
-- Follow Rust idioms
-- Document public APIs
-- Write tests for new functionality
-
-### Obfusku Code
-
-- Use symbolic style consistently
-- Include comments for non-obvious constructs
-- Always seal programs with `❧`
+Include:
+- What you expected to happen
+- What actually happened
+- Steps to reproduce
+- Environment details (OS, runtime version, relevant config)
 
 ---
 
-## Pull Request Process
+## Proposing a Feature
 
-1. Fork the repository
-2. Create a feature branch
-3. Make changes with clear commits
-4. Ensure tests pass: `cargo test`
-5. Update documentation if needed
-6. Submit PR with description of changes
+Open a [GitHub Issue](https://github.com/core-red-project/obfusku/issues/new/choose) using the feature request template, or submit a PR directly if the change is small and self-contained.
+
+For larger features, an issue discussion first avoids wasted effort on both sides.
 
 ---
 
-## Questions?
+## Workflow
 
-Open an issue with `[Question]` prefix for any clarifications.
-
-## Security Issues
-
-**Do not** open public issues for security vulnerabilities.
-
-See **[SECURITY.md](SECURITY.md)** for responsible disclosure procedures.
+1. Fork the repository and create a branch from `main`.
+2. Name your branch descriptively — `fix/crash-on-empty-input`, `feat/offline-mode`.
+3. Make your changes.
+4. Open a pull request against `main` with a clear description of what changed and why.
 
 ---
 
-*Symbols carry meaning. Contributions shape the future.*
+## Pull Request Checklist
+
+Before submitting:
+
+- [ ] The project builds without errors
+- [ ] Changes are described in [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`
+- [ ] The PR description explains what changed and why
+- [ ] New behavior is covered by tests where applicable
+
+---
+
+## Commit Style
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Every commit message must follow the format:
 
 ```
-❧
+<type>: <description>
+
+[optional body]
+[optional footer]
 ```
+
+Accepted types:
+
+| Type       | Use for                                          |
+|------------|--------------------------------------------------|
+| `feat`     | New functionality                                |
+| `fix`      | Bug fixes                                        |
+| `docs`     | Documentation only                               |
+| `style`    | Formatting, whitespace — no logic changes        |
+| `refactor` | Code restructure without behavior change         |
+| `test`     | Adding or updating tests                         |
+| `chore`    | Build process, tooling, dependencies             |
+| `perf`     | Performance improvements                         |
+
+Examples:
+
+```
+feat: add offline fallback for config reads
+fix: prevent crash when scripts directory is missing
+docs: update installation steps for cross-compilation
+chore: bump dependencies to latest stable
+```
+
+Commits that don't follow this format will be flagged during review.
+
+---
+
+## Questions
+
+If something in the codebase is unclear, open an issue with the `question` label before assuming it's a bug.
+
+---
+
+*Obfusku is a Core Red Project. Part of the [Sxnnyside Project](https://sxnnysideproject.com).*

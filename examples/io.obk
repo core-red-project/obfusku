@@ -1,0 +1,28 @@
+// Obfusku Canonical Example: Host and File System I/O
+//
+// Demonstrates:
+// 1. Console printing via native `print : ⌘ → ∅`.
+// 2. Sandboxed file reading via native `readFile : ⌘ → ⌘`.
+// 3. Sandboxed file writing via native `writeFile : ⌘ → (⌘ → ∅)`.
+// 4. Interactive input note: `readLine : ∅ → ⌘` reads a line from stdin,
+//    raising Failure("EOF", ...) when the input stream terminates.
+
+// 1. Console printing
+header ≔ "=== Obfusku I/O Subsystem ==="
+loggedHeader ≔ print(header)
+
+// 2. Sandboxed file reading (scoped to the script directory)
+initialData ≔ readFile("sample_message.txt")
+loggedInitial ≔ print(initialData)
+
+// 3. Sandboxed file writing
+// `writeFile` is curried: writeFile(path)(content) -> ∅
+writeStatus ≔ writeFile("sample_message.txt")("Obfusku host I/O successfully verified.")
+
+// 4. Verify written file contents
+verifiedData ≔ readFile("sample_message.txt")
+loggedVerified ≔ print(verifiedData)
+
+// Final returned result
+result ≔ verifiedData
+❧

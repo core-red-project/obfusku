@@ -1,0 +1,22 @@
+[package]
+name = "obfusku-fmt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Formatter over obfusku-syntax's surface AST. No dependency on obfusku-core, obfusku-typecheck, or obfusku-runtime."
+
+[dependencies]
+obfusku-syntax = { path = "../obfusku-syntax" }
+obfusku-diagnostics = { path = "../obfusku-diagnostics" }
+
+[lints]
+workspace = true
+
+# Dev-only: the shipped library itself has no dependency on the
+# typecheck/runtime stack (formatting ill-typed, in-progress code must
+# keep working, per IMPLEMENTATION_ARCHITECTURE.md §13) — these exist
+# only so tests/roundtrip.rs can prove reformatting preserves runtime
+# *behavior*, not merely that the reformatted text re-parses.
+[dev-dependencies]
+obfusku-cli = { path = "../obfusku-cli" }
+obfusku-runtime = { path = "../obfusku-runtime" }

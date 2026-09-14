@@ -1,15 +1,30 @@
 # Rust build artifacts
 /target/
-Cargo.lock
 
-# IDE
+# Editor and IDE metadata
 .idea/
 *.iml
 .vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
 
-# OS files
+# OS metadata
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# Debug
+# Debug & temporary files
 *.pdb
+*.log
+*.tmp
+*.bak
+
+# Tool caches
+.animoria/

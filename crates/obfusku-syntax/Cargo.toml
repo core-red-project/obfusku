@@ -1,0 +1,14 @@
+[package]
+name = "obfusku-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lexer, parser, surface AST, and desugaring to obfusku-core's Core AST."
+
+[dependencies]
+obfusku-core = { path = "../obfusku-core" }
+obfusku-diagnostics = { path = "../obfusku-diagnostics" }
+unicode-normalization = "0.1"
+
+[lints]
+workspace = true

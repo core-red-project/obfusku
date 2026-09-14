@@ -1,0 +1,32 @@
+// Obfusku Canonical Example: Ambient Lists and Higher-Order Combinators
+//
+// Demonstrates:
+// 1. Constructing inductive lists using ambient constructors (Cons and Nil).
+// 2. Transforming elements with map.
+// 3. Filtering elements with filter and predicates.
+// 4. Reducing structures with left-associative fold.
+
+λdouble(n: ⟁): ⟁ → n ✱ 2
+
+λisPositive(n: ⟁): ○ → ⟡ n > 0 {
+  ◉ → ◉
+  ⟢ ◎ → ◎
+}
+
+λsum(acc: ⟁, n: ⟁): ⟁ → acc ✚ n
+
+// Build an initial list: [-1, 2, -3, 4, 5]
+numbers ≔ Cons(−1, Cons(2, Cons(−3, Cons(4, Cons(5, Nil)))))
+
+// Keep only positive numbers: [2, 4, 5]
+positives ≔ filter(isPositive, numbers)
+
+// Double each element: [4, 8, 10]
+doubled ≔ map(double, positives)
+
+// Sum elements from seed 0: 4 + 8 + 10 = 22
+total ≔ fold(sum, 0, doubled)
+
+// Print sum for observation
+result ≔ total
+❧

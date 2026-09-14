@@ -1,0 +1,29 @@
+// ═══════════════════════════════════════════════════════════════
+// Algebraic Data Types (ADTs) in Obfusku
+// Demonstrates: Sum types, constructors, and constructor pattern matching
+// ═══════════════════════════════════════════════════════════════
+
+// User-defined ADT declaration
+Shape ≔ {
+    Circle(⟁)
+    ⟢ Rectangle(⟁, ⟁)
+}
+
+// Function matching over Shape constructors
+λarea(s: Shape): ⟁ →
+    ⟡ s {
+        Circle(r) → 3 ✱ r ✱ r
+        ⟢ Rectangle(w, h) → w ✱ h
+    }
+
+// Instantiate constructors
+c ≔ Circle(5)
+r ≔ Rectangle(4, 6)
+
+// Calculate areas
+circleArea ≔ area(c)
+rectArea ≔ area(r)
+
+// Sum of both areas
+result ≔ circleArea ✚ rectArea
+❧

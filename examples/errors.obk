@@ -1,0 +1,38 @@
+// Obfusku Canonical Example: Exceptions and Error Handling
+//
+// Demonstrates:
+// 1. Raising custom exceptions using `☄ Failure(tag, message)`.
+// 2. Intercepting exceptions with the catch expression `☊ (guarded) handler`.
+// 3. Pattern matching against the built-in `Exception` ADT variants.
+// 4. Catching runtime arithmetic exceptions such as DivisionByZero.
+
+// Safe integer division with explicit raise
+λsafeDivide(numerator: ⟁, denominator: ⟁): ⟁ → ⟡ denominator == 0 {
+  ◉ → ☄ DivisionByZero
+  ⟢ ◎ → numerator ÷ denominator
+}
+
+// Function that validates business rules and raises a tagged Failure
+λvalidateAge(age: ⟁): ⌘ → ⟡ age < 0 {
+  ◉ → ☄ Failure("InvalidAge", "age cannot be negative")
+  ⟢ ◎ → "valid"
+}
+
+// Catching a user-raised tagged failure
+caughtFailure ≔ ☊ (validateAge(−5)) λ(e) → ⟡ e {
+  Failure(tag, msg) → msg
+  ⟢ DivisionByZero → "caught div0"
+  ⟢ NonExhaustiveMatch → "caught nem"
+  ⟢ InvalidOperation(m) → m
+  ⟢ IntegerOverflow → "caught overflow"
+}
+
+// Catching a runtime division-by-zero
+caughtDivZero ≔ ☊ (safeDivide(100, 0)) λ(e) → ⟡ e {
+  DivisionByZero → 0
+  ⟢ _ → −1
+}
+
+// Final computed result
+result ≔ caughtDivZero ✚ 42
+❧

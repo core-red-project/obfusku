@@ -1,0 +1,11 @@
+[package]
+name = "obfusku-diagnostics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Foundational source-location and diagnostic types for Obfusku. No dependency on any other Obfusku crate."
+
+[dependencies]
+
+[lints]
+workspace = true

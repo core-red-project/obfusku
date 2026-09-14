@@ -1,0 +1,13 @@
+[package]
+name = "obfusku-typecheck"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Type checking against obfusku-core's AST. Never depends on obfusku-syntax or obfusku-runtime."
+
+[dependencies]
+obfusku-core = { path = "../obfusku-core" }
+obfusku-diagnostics = { path = "../obfusku-diagnostics" }
+
+[lints]
+workspace = true

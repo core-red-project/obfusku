@@ -1,0 +1,21 @@
+[package]
+name = "obfusku-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Obfusku CLI — orchestration and presentation only, no language logic of its own."
+
+[[bin]]
+name = "obfusku"
+path = "src/main.rs"
+
+[dependencies]
+obfusku-diagnostics = { path = "../obfusku-diagnostics" }
+obfusku-core = { path = "../obfusku-core" }
+obfusku-typecheck = { path = "../obfusku-typecheck" }
+obfusku-syntax = { path = "../obfusku-syntax" }
+obfusku-runtime = { path = "../obfusku-runtime" }
+obfusku-fmt = { path = "../obfusku-fmt" }
+
+[lints]
+workspace = true

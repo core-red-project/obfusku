@@ -1,0 +1,9 @@
+# CODEOWNERS
+#
+# Every file in this repository is owned by the maintainer.
+# Pull requests require review before merging.
+#
+# Format: <pattern> <owner>
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @HoujouSxnnyside

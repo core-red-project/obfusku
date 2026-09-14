@@ -1,35 +1,32 @@
 // ═══════════════════════════════════════════════════════════════
-// Function Example in Obfusku
-// Demonstrates the λ (lambda) function definition syntax
+// Functions and Currying in Obfusku
+// Demonstrates: Function declarations, lambdas, currying, and pipelines
 // ═══════════════════════════════════════════════════════════════
 
-// Define a function to calculate square
-λsquare[⟁n]
-    ⤶[n ✱ n]
-Λ
+// Named function declaration with explicit parameter and return types
+λsquare(n: ⟁): ⟁ → n ✱ n
 
-// Define a function to add two numbers
-λadd[⟁a, ⟁b]
-    ⤶[a ✚ b]
-Λ
+// Two-argument curried function
+λadd(a: ⟁, b: ⟁): ⟁ → a ✚ b
 
-// Define a greeting function
-λgreet[⌘name]
-    ✤"Hello,"
-    ⚡[name]
-Λ
+// Anonymous lambda with annotated parameter type
+increment ≔ λ(x: ⟁) → x ✚ 1
 
-// Use the functions
-⟁x=7
-⟁squared=⤷square[x]
-✤"The square of 7 is:"
-⚡[squared]
+// Higher-order function taking a function as an argument
+λapplyTwice(f: (⟁ → ⟁), x: ⟁): ⟁ → f(f(x))
 
-⟁sum=⤷add[10, 20]
-✤"10 + 20 ="
-⚡[sum]
+// Standard application
+sq7 ≔ square(7)
 
-// Call greet function (result discarded)
-⟁_=⤷greet["Obfusku Wizard"]
+// Curried application (partial application)
+addTen ≔ add(10)
+sum30 ≔ addTen(20)
 
+// Application through pipeline operator (▷)
+pipelineResult ≔ 5 ▷ square ▷ increment
+
+// Higher-order function invocation
+quadrupleInc ≔ applyTwice(increment, 10)
+
+result ≔ pipelineResult ✚ sum30
 ❧

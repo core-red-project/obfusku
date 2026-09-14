@@ -1,0 +1,30 @@
+# Set default behavior to automatically normalize line endings
+* text=auto eol=lf
+
+# Obfusku language source files
+*.obk text eol=lf linguist-detectable linguist-documentation=false
+
+# Rust source code
+*.rs text eol=lf diff=rust
+
+# Configuration and manifests
+*.toml text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.lock text eol=lf
+
+# Documentation and text
+*.md text eol=lf
+LICENSE text eol=lf
+
+# Scripts and task runners
+*.sh text eol=lf
+Justfile text eol=lf
+
+# Binary media assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

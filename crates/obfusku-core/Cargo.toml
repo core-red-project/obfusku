@@ -1,0 +1,12 @@
+[package]
+name = "obfusku-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core AST and type vocabulary defined by SEMANTIC_CORE.md. No parsing logic, no execution logic, no glyphs."
+
+[dependencies]
+obfusku-diagnostics = { path = "../obfusku-diagnostics" }
+
+[lints]
+workspace = true

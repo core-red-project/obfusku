@@ -1,49 +1,38 @@
 // ═══════════════════════════════════════════════════════════════
-// Pattern Matching Example in Obfusku v0.3.0
-// Demonstrates the ⟡ ⟢ ⟣ pattern matching syntax
+// Pattern Matching in Obfusku
+// Demonstrates: Literal patterns, boolean patterns, and wildcards
 // ═══════════════════════════════════════════════════════════════
 
-// Simple value matching
-⟁value=2
+// Integer pattern matching with wildcards
+λdescribeNumber(n: ⟁): ⌘ →
+    ⟡ n {
+        0 → "zero"
+        ⟢ 1 → "one"
+        ⟢ 2 → "two"
+        ⟢ _ → "many"
+    }
 
-⟡value]
-    ⟢1]
-        ✤"Value is one"
-    ⟢2]
-        ✤"Value is two"
-    ⟢3]
-        ✤"Value is three"
-    ⟢◇]
-        ✤"Value is something else"
-⟣
+// Boolean pattern matching
+λbooleanToString(b: ○): ⌘ →
+    ⟡ b {
+        ◉ → "true"
+        ⟢ ◎ → "false"
+    }
 
-// String matching
-⌘command="cast"
+// Nested pattern matching
+λclassify(n: ⟁): ⌘ →
+    ⟡ (n > 0) {
+        ◉ → "positive"
+        ⟢ ◎ → ⟡ (n < 0) {
+            ◉ → "negative"
+            ⟢ ◎ → "zero"
+        }
+    }
 
-⟡command]
-    ⟢"cast"]
-        ✤"Casting spell..."
-    ⟢"heal"]
-        ✤"Healing..."
-    ⟢"flee"]
-        ✤"Running away!"
-    ⟢◇]
-        ✤"Unknown command"
-⟣
+zeroStr ≔ describeNumber(0)
+manyStr ≔ describeNumber(42)
+boolStr ≔ booleanToString(◉)
+classStr ≔ classify(0 ☠︎ 5)
 
-// Matching with computed values
-⟁x=10
-⟁y=5
-⟁result=0
-⚙︎[x ☠︎ y]→result
-
-⟡result]
-    ⟢0]
-        ✤"Equal values"
-    ⟢5]
-        ✤"Difference is 5"
-    ⟢◇]
-        ✤"Some other difference"
-⟣
-
+result ≔ classStr
 ❧

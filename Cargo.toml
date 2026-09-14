@@ -1,36 +1,15 @@
-[package]
-name = "obfusku"
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
 version = "1.0.0"
 edition = "2021"
-authors = ["Sxnnyside Project"]
-description = "Obfusku - The Magical Programming Language. A symbol-driven esoteric VM."
 license = "MIT"
-repository = "https://github.com/Sxnnyside-Project/obfusku"
-keywords = ["esoteric", "language", "vm", "interpreter", "symbolic"]
-categories = ["compilers", "development-tools"]
+repository = "https://github.com/core-red-project/obfusku"
 
-[dependencies]
-# Unicode handling - essential for our symbol-first design
-unicode-segmentation = "1.10"
+[workspace.lints.rust]
+unsafe_code = "forbid"
 
-# Fast hashmap for symbol tables and variables
-rustc-hash = "1.1"
-
-# Better error handling
-thiserror = "1.0"
-
-# CLI interface
-clap = { version = "4.4", features = ["derive"] }
-
-# Colored terminal output for magical error messages
-colored = "2.1"
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-
-[profile.dev]
-opt-level = 0
-debug = true
+[workspace.lints.clippy]
+all = "warn"
