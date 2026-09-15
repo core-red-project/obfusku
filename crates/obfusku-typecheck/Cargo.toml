@@ -9,8 +9,8 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-obfusku-core = { path = "../obfusku-core" }
-obfusku-diagnostics = { path = "../obfusku-diagnostics" }
+obfusku-core = { version = "1.0.0", path = "../obfusku-core" }
+obfusku-diagnostics = { version = "1.0.0", path = "../obfusku-diagnostics" }
 
 [lints]
 workspace = true

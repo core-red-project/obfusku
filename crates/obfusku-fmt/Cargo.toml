@@ -9,8 +9,8 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-obfusku-syntax = { path = "../obfusku-syntax" }
-obfusku-diagnostics = { path = "../obfusku-diagnostics" }
+obfusku-syntax = { version = "1.0.0", path = "../obfusku-syntax" }
+obfusku-diagnostics = { version = "1.0.0", path = "../obfusku-diagnostics" }
 
 [lints]
 workspace = true
@@ -21,5 +21,5 @@ workspace = true
 # only so tests/roundtrip.rs can prove reformatting preserves runtime
 # *behavior*, not merely that the reformatted text re-parses.
 [dev-dependencies]
-obfusku-cli = { path = "../obfusku-cli" }
-obfusku-runtime = { path = "../obfusku-runtime" }
+obfusku-cli = { version = "1.0.0", path = "../obfusku-cli" }
+obfusku-runtime = { version = "1.0.0", path = "../obfusku-runtime" }

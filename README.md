@@ -52,9 +52,38 @@ This is a Core Red Project, part of the Sxnnyside Project ecosystem.
 
 ## Installation
 
-### Option 1: Pre-built Binaries (Recommended)
+### Quick Install (Linux & macOS)
 
-Download the latest standalone executable for your platform from [GitHub Releases](https://github.com/core-red-project/obfusku/releases):
+Install the latest pre-built binary directly with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/core-red-project/obfusku/main/install.sh | bash
+```
+
+### Via Homebrew (macOS & Linux)
+
+```bash
+brew tap sxnnyside-project/tap
+brew install obfusku-cli
+```
+
+### Via Cargo (crates.io or Git)
+
+Install directly from crates.io:
+
+```bash
+cargo install obfusku-cli
+```
+
+Or install the latest commit from source:
+
+```bash
+cargo install --git https://github.com/core-red-project/obfusku.git obfusku-cli
+```
+
+### Pre-built Binaries
+
+Download standalone executables directly from [GitHub Releases](https://github.com/core-red-project/obfusku/releases):
 
 - **Linux (x86_64)**: `obfusku-linux-x86_64`
 - **macOS (Apple Silicon / ARM64)**: `obfusku-macos-aarch64`
@@ -67,17 +96,7 @@ chmod +x obfusku-<target>
 sudo mv obfusku-<target> /usr/local/bin/obfusku
 ```
 
-### Option 2: Via Cargo
-
-If you already have the Rust toolchain installed:
-
-```bash
-cargo install --git https://github.com/core-red-project/obfusku.git obfusku-cli
-```
-
-This compiles and places the `obfusku` binary directly into your `~/.cargo/bin/`.
-
-### Option 3: From Source
+### Build from Source
 
 ```bash
 git clone https://github.com/core-red-project/obfusku.git
