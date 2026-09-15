@@ -48,16 +48,38 @@ This is a Core Red Project, part of the Sxnnyside Project ecosystem.
 - **Ambient Functional Prelude**: Zero-dependency standard library (`stdlib.obk`) providing inductive collections (`List<T>`) and verified higher-order combinators (`map`, `filter`, `fold`) out of the box.
 - **Sandboxed Capability I/O**: Host interface providing console streaming (`print`), terminal input (`readLine`), and path-validated filesystem primitives (`readFile`, `writeFile`) scoped securely to entry directory roots.
 - **Deterministic Formatter**: Dedicated `obfusku-fmt` engine that canonizes source layout, operator precedence spacing, and semantic indentation with strict roundtrip fidelity.
-- **Multi-Crate Workspace Architecture**: Strict separation of concerns across 7 decoupled workspace crates (`core`, `diagnostics`, `syntax`, `typecheck`, `runtime`, `fmt`, `cli`) forming an acyclic dependency graph.
+- **Language Server Protocol (LSP)**: Dedicated `obfusku-lsp` server providing real-time syntax and type diagnostics for editor integrations over JSON-RPC.
+- **Multi-Crate Workspace Architecture**: Strict separation of concerns across 8 decoupled workspace crates (`core`, `diagnostics`, `syntax`, `typecheck`, `runtime`, `fmt`, `lsp`, `cli`) forming an acyclic dependency graph.
 
 ## Installation
 
 ### Quick Install (Linux & macOS)
 
-Install the latest pre-built binary directly with a single command:
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/core-red-project/obfusku/main/install.sh | bash
+```
+
+### Quick Install (Windows PowerShell)
+
+In PowerShell, run:
+
+```powershell
+irm https://raw.githubusercontent.com/core-red-project/obfusku/main/install.ps1 | iex
+```
+
+### Pre-built Binaries
+
+Download standalone executables directly from [GitHub Releases](https://github.com/core-red-project/obfusku/releases):
+
+- **Linux (x86_64)**: `obfusku-linux-x86_64` & `obfusku-lsp-linux-x86_64`
+- **macOS (Apple Silicon / ARM64)**: `obfusku-macos-aarch64` & `obfusku-lsp-macos-aarch64`
+- **Windows (x86_64)**: `obfusku-windows-x86_64.exe` & `obfusku-lsp-windows-x86_64.exe`
+
+On Linux/macOS, make the binary executable and move it into your `PATH`:
+
+```bash
+chmod +x obfusku-<target>
+sudo mv obfusku-<target> /usr/local/bin/obfusku
 ```
 
 ### Via Homebrew (macOS & Linux)
@@ -73,27 +95,14 @@ Install directly from crates.io:
 
 ```bash
 cargo install obfusku-cli
+cargo install obfusku-lsp
 ```
 
 Or install the latest commit from source:
 
 ```bash
 cargo install --git https://github.com/core-red-project/obfusku.git obfusku-cli
-```
-
-### Pre-built Binaries
-
-Download standalone executables directly from [GitHub Releases](https://github.com/core-red-project/obfusku/releases):
-
-- **Linux (x86_64)**: `obfusku-linux-x86_64`
-- **macOS (Apple Silicon / ARM64)**: `obfusku-macos-aarch64`
-- **macOS (Intel / x86_64)**: `obfusku-macos-x86_64`
-
-Make the binary executable and move it into your `PATH`:
-
-```bash
-chmod +x obfusku-<target>
-sudo mv obfusku-<target> /usr/local/bin/obfusku
+cargo install --git https://github.com/core-red-project/obfusku.git obfusku-lsp
 ```
 
 ### Build from Source
@@ -150,6 +159,7 @@ obfusku/
 │   ├── obfusku-typecheck/    # Hindley-Milner type inference & exhaustiveness
 │   ├── obfusku-runtime/      # Evaluator, lexical environments, TCO
 │   ├── obfusku-fmt/          # Canonical source code formatter
+│   ├── obfusku-lsp/          # Language Server Protocol (LSP) daemon
 │   └── obfusku-cli/          # CLI interface, stdlib, REPL
 ├── examples/                 # Executable canonical example suite
 └── spec/                     # Formal normative language specifications & ADRs

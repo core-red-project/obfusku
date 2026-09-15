@@ -38,7 +38,10 @@ OS_RAW="$(uname -s)"
 case "$OS_RAW" in
     Linux*)     OS="linux" ;;
     Darwin*)    OS="macos" ;;
-    *)          error "Unsupported operating system: $OS_RAW. Obfusku supports Linux and macOS (build from source on others)." ;;
+    MINGW*|MSYS*|CYGWIN*)
+        error "Windows detected. Please run the Windows PowerShell installer instead:\n  irm https://raw.githubusercontent.com/$REPO/main/install.ps1 | iex"
+        ;;
+    *)          error "Unsupported operating system: $OS_RAW. Obfusku supports Linux, macOS, and Windows." ;;
 esac
 
 # 2. Detect Architecture
@@ -49,13 +52,13 @@ case "$ARCH_RAW" in
     *)              error "Unsupported CPU architecture: $ARCH_RAW. Supported architectures: x86_64, aarch64." ;;
 esac
 
-# 3. Match release artifact
+# 3. Match release artifacts
 if [ "$OS" = "linux" ] && [ "$ARCH" = "x86_64" ]; then
     ARTIFACT_NAME="obfusku-linux-x86_64"
+    LSP_ARTIFACT_NAME="obfusku-lsp-linux-x86_64"
 elif [ "$OS" = "macos" ] && [ "$ARCH" = "aarch64" ]; then
     ARTIFACT_NAME="obfusku-macos-aarch64"
-elif [ "$OS" = "macos" ] && [ "$ARCH" = "x86_64" ]; then
-    ARTIFACT_NAME="obfusku-macos-x86_64"
+    LSP_ARTIFACT_NAME="obfusku-lsp-macos-aarch64"
 elif [ "$OS" = "linux" ] && [ "$ARCH" = "aarch64" ]; then
     error "Pre-built Linux ARM64 binary is not currently distributed. You can install via Cargo: cargo install --git https://github.com/$REPO.git obfusku-cli"
 else
@@ -118,6 +121,21 @@ if [ "$USE_SUDO" -eq 1 ]; then
     sudo install -m 755 "$TMP_BIN" "$TARGET_DIR/$BINARY_NAME"
 else
     install -m 755 "$TMP_BIN" "$TARGET_DIR/$BINARY_NAME"
+fi
+
+# Also attempt to download and install obfusku-lsp
+if [ -n "${LSP_ARTIFACT_NAME:-}" ]; then
+    LSP_URL="${DOWNLOAD_URL%/*}/$LSP_ARTIFACT_NAME"
+    TMP_LSP="$TMP_DIR/obfusku-lsp"
+    if curl -fSL "$LSP_URL" -o "$TMP_LSP" 2>/dev/null; then
+        chmod +x "$TMP_LSP"
+        if [ "$USE_SUDO" -eq 1 ]; then
+            sudo install -m 755 "$TMP_LSP" "$TARGET_DIR/obfusku-lsp"
+        else
+            install -m 755 "$TMP_LSP" "$TARGET_DIR/obfusku-lsp"
+        fi
+        info "Installed Language Server: $TARGET_DIR/obfusku-lsp"
+    fi
 fi
 
 # 6. Verify installation

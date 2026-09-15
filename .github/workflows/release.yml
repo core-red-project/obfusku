@@ -17,12 +17,22 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: obfusku-linux-x86_64
+            cli_artifact_name: obfusku-cli-linux-x86_64
+            lsp_artifact_name: obfusku-lsp-linux-x86_64
+            binary_ext: ""
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact_name: obfusku-macos-aarch64
-          - os: macos-13
-            target: x86_64-apple-darwin
-            artifact_name: obfusku-macos-x86_64
+            cli_artifact_name: obfusku-cli-macos-aarch64
+            lsp_artifact_name: obfusku-lsp-macos-aarch64
+            binary_ext: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: obfusku-windows-x86_64.exe
+            cli_artifact_name: obfusku-cli-windows-x86_64.exe
+            lsp_artifact_name: obfusku-lsp-windows-x86_64.exe
+            binary_ext: ".exe"
+            
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
@@ -34,19 +44,23 @@ jobs:
           toolchain: 1.93.0
           targets: ${{ matrix.target }}
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p obfusku-cli
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }} -p obfusku-cli -p obfusku-lsp
 
-      - name: Stage artifact
+      - name: Stage artifacts
+        shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/obfusku dist/${{ matrix.artifact_name }}
+          ext="${{ matrix.binary_ext }}"
+          cp "target/${{ matrix.target }}/release/obfusku${ext}" "dist/${{ matrix.artifact_name }}"
+          cp "target/${{ matrix.target }}/release/obfusku${ext}" "dist/${{ matrix.cli_artifact_name }}"
+          cp "target/${{ matrix.target }}/release/obfusku-lsp${ext}" "dist/${{ matrix.lsp_artifact_name }}"
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}
+          path: dist/*
 
   publish-release:
     name: Publish GitHub Release
