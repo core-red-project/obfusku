@@ -32,7 +32,7 @@ Source code is tokenized with multi-byte Unicode preservation, parsed into surfa
 
 ### Philosophy
 
-> *"Symbols do not merely represent operations—they embody semantics."*
+> _"Symbols do not merely represent operations—they embody semantics."_
 
 This is a Core Red Project, part of the Sxnnyside Project ecosystem.
 
@@ -86,7 +86,7 @@ sudo mv obfusku-<target> /usr/local/bin/obfusku
 
 ```bash
 brew tap sxnnyside-project/tap
-brew install obfusku-cli
+brew install obfusku
 ```
 
 ### Via Cargo (crates.io or Git)
