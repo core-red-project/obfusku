@@ -1,0 +1,7 @@
+// A module deliberately nested a directory away from the entry
+// module — reachable only because module resolution is
+// project-relative (searches the whole Project tree by basename),
+// not same-directory-only.
+
+greeting ≔⟳ "hello from a nested Project module"
+❧

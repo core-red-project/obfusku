@@ -51,10 +51,10 @@ pub enum TokenKind {
     Not,     // ¬ — unary logical not
     Lt,      // <
     Gt,      // >
-    Le,      // <=
-    Ge,      // >=
-    EqEq,    // ==
-    NotEq,   // !=
+    Le,      // ≤ (ADR-016)
+    Ge,      // ≥ (ADR-016)
+    EqEq,    // ≡ (ADR-016)
+    NotEq,   // ≠ (ADR-016)
     And,     // ∧
     Or,      // ∨
     Xor,     // ⊻
@@ -173,14 +173,18 @@ impl<'a> Lexer<'a> {
                 tokens.push(tok);
                 continue;
             }
-            if let Some(tok) = self.scan_compound_ascii(start, c) {
-                tokens.push(tok);
-                continue;
-            }
             // Try fixed glyphs first — several (notably 'λ') are
             // Unicode-alphabetic and would otherwise be mis-scanned as
             // the start of an identifier if checked second.
             if let Some(tok) = self.scan_glyph(start, c) {
+                tokens.push(tok);
+                continue;
+            }
+            if let Some(tok) = self.scan_glyph_ident(start, c) {
+                tokens.push(tok);
+                continue;
+            }
+            if let Some(tok) = self.scan_host_effect(start, c) {
                 tokens.push(tok);
                 continue;
             }
@@ -397,34 +401,62 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    /// Two-ASCII-character compound operators (`<=`, `>=`, `==`, `!=`) —
-    /// tried before the single-character `<`/`>` glyphs so the longer
-    /// form wins (§2's longest-match-first lexical priority). `=`/`!`
-    /// alone are not otherwise valid tokens (`≔` is the unrelated,
-    /// distinct U+2254 glyph), so no ambiguity with anything else.
-    fn scan_compound_ascii(&mut self, start: usize, c: char) -> Option<Token> {
-        let kind = match c {
-            '<' | '>' | '=' | '!' => {
-                let mut lookahead = self.chars.clone();
-                lookahead.next();
-                if !matches!(lookahead.peek(), Some((_, '='))) {
-                    return None;
-                }
-                match c {
-                    '<' => TokenKind::Le,
-                    '>' => TokenKind::Ge,
-                    '=' => TokenKind::EqEq,
-                    '!' => TokenKind::NotEq,
-                    _ => unreachable!(),
-                }
-            }
+    /// Canon glyph names (`GLYPH_SYSTEM_DESIGN.md` §10.3/§10.4/§10.5):
+    /// `⊘`/`⁝` are `List`'s `Nil`/`Cons` constructors, `⦰`/`⧫` are
+    /// `Optional`'s `None`/`Some` constructors, `✓`/`✗` are `Result`'s
+    /// `Ok`/`Err` constructors, `⟐`/`⌿`/`⌽` are the ambient
+    /// `map`/`filter`/`fold` combinators over `List`, `⊡`/`⊟`/`⊞`/`#`/`⊙`
+    /// are `Array`'s `map`/`filter`/`fold`/`length`/`set` natives. These
+    /// reuse the ordinary `Ident` token rather than each minting a
+    /// dedicated `TokenKind` — they behave exactly like any other
+    /// prelude name (constructor Tag or ordinary reference), just
+    /// spelled with a symbol instead of a word; `starts_uppercase` in
+    /// the parser treats a symbol-led name as a Tag the same way it
+    /// treats an uppercase letter.
+    fn scan_glyph_ident(&mut self, start: usize, c: char) -> Option<Token> {
+        let name = match c {
+            '⊘' | '⁝' | '⦰' | '⧫' | '✓' | '✗' | '⟐' | '⌿' | '⌽' | '⊡' | '⊟' | '⊞' | '#' | '⊙'
+            | '↗' | '↘' => c.to_string(),
             _ => return None,
         };
-        self.chars.next(); // consume first char
-        let (eq_offset, eq_char) = self.chars.next().expect("checked by lookahead above");
+        self.chars.next();
         Some(Token {
-            kind,
-            span: self.span(start, eq_offset + eq_char.len_utf8()),
+            kind: TokenKind::Ident(name),
+            span: self.span(start, start + c.len_utf8()),
+        })
+    }
+
+    /// Host-effect family (`GLYPH_SYSTEM_DESIGN.md` §10.2): `⌁` (host
+    /// boundary) composes with an independent direction mark (`↑`
+    /// emit/`↓` read) and an optional medium mark (`⌬` file, console by
+    /// default) into one name — `⌁↑`, `⌁↓`, `⌁↑⌬`, `⌁↓⌬` — the same way
+    /// `≔˚⟳` composes the Binder family's independent postfix marks.
+    /// Unlike those, this composition spells a single `Ident`, not
+    /// several tokens: `print`/`readLine`/`readFile`/`writeFile` are
+    /// ordinary prelude names looked up by their full string, so the
+    /// lexer must produce that whole string as one token. An invalid or
+    /// incomplete combination (bare `⌁`, or `⌁` with no matching host
+    /// native) is not rejected here — it lexes fine and simply fails to
+    /// resolve later as an unbound identifier, the same as any other
+    /// misspelled name.
+    fn scan_host_effect(&mut self, start: usize, c: char) -> Option<Token> {
+        if c != '⌁' {
+            return None;
+        }
+        self.chars.next();
+        let mut end = start + c.len_utf8();
+        if let Some(&(i, dir @ ('↑' | '↓'))) = self.chars.peek() {
+            self.chars.next();
+            end = i + dir.len_utf8();
+            if let Some(&(i, '⌬')) = self.chars.peek() {
+                self.chars.next();
+                end = i + '⌬'.len_utf8();
+            }
+        }
+        let name = self.source[start..end].to_string();
+        Some(Token {
+            kind: TokenKind::Ident(name),
+            span: self.span(start, end),
         })
     }
 
@@ -463,6 +495,10 @@ impl<'a> Lexer<'a> {
             '⊻' => TokenKind::Xor,
             '<' => TokenKind::Lt,
             '>' => TokenKind::Gt,
+            '≤' => TokenKind::Le,
+            '≥' => TokenKind::Ge,
+            '≡' => TokenKind::EqEq,
+            '≠' => TokenKind::NotEq,
             '☄' => TokenKind::Raise,
             '☊' => TokenKind::Catch,
             '⟁' => TokenKind::TyInt,

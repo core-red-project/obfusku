@@ -40,11 +40,12 @@ fn main() -> ExitCode {
             repl();
             ExitCode::SUCCESS
         }
-        Some("build") | Some("test") => {
+        Some("build") => with_path_arg(&args, cmd_build),
+        Some("test") => {
             eprintln!(
-                "'{}' is not yet supported: it depends on the artifact/module distribution \
-                 model, which spec/LANGUAGE_SPEC.md §5 leaves undecided — not invented here",
-                args[1]
+                "'test' is not yet supported: it requires a language-level testing \
+                 construct that is not part of the 1.0 language surface (spec/LANGUAGE_SPEC.md \
+                 §5) — deliberately not invented here as a CLI-level naming convention"
             );
             ExitCode::from(2)
         }
@@ -62,22 +63,26 @@ fn main() -> ExitCode {
 
 const USAGE: &str = "usage: obfusku <command> [args]\n\
      commands:\n  \
-     run <file>       run a program\n  \
-     check <file>     type-check without executing\n  \
-     fmt <file>       print the canonically formatted source\n  \
-     inspect <file> --tokens|--ast|--core\n  \
-     repl             interactive read-eval-print loop\n  \
-     version          print the CLI version\n\n\
+     run <file|project>       run a program or Project directory\n  \
+     check <file|project>     type-check without executing\n  \
+     fmt <file|project>       print the canonically formatted source\n  \
+     inspect <file|project> --tokens|--ast|--core\n  \
+     build <project>          certify a Project as a distributable Source Artifact\n  \
+     repl                     interactive read-eval-print loop\n  \
+     version                  print the CLI version\n\n\
      options:\n  \
-     -h, --help       print this usage text and exit\n  \
-     -V, --version    print the CLI version and exit (same as 'version')";
+     -h, --help               print this usage text and exit\n  \
+     -V, --version            print the CLI version and exit (same as 'version')";
 
 fn print_usage() {
     eprintln!("{}", USAGE);
 }
 
-/// Reads `args[2]` as a file path, reports a usage error if missing or
-/// unreadable, and hands the source text to `cmd`.
+/// Reads `args[2]` — a file path or a Project directory — reports a
+/// usage error if missing or unreadable, and hands the resolved entry
+/// file's source text to `cmd`. `fmt`/`inspect` operate on one file's
+/// own text only (no import resolution), so a directory argument only
+/// needs its entry module discovered, per `project::resolve_entry_point`.
 fn with_file_arg(args: &[String], cmd: fn(&str) -> ExitCode) -> ExitCode {
     let Some(path) = args.get(2) else {
         eprintln!(
@@ -86,10 +91,17 @@ fn with_file_arg(args: &[String], cmd: fn(&str) -> ExitCode) -> ExitCode {
         );
         return ExitCode::from(2);
     };
-    match std::fs::read_to_string(path) {
+    let entry_file = match obfusku_cli::project::resolve_entry_point(Path::new(path)) {
+        Ok(entry) => entry.entry_file,
+        Err(d) => {
+            eprintln!("{}", obfusku_cli::render_diagnostics("", &[d]));
+            return ExitCode::from(2);
+        }
+    };
+    match std::fs::read_to_string(&entry_file) {
         Ok(source) => cmd(&source),
         Err(e) => {
-            eprintln!("could not read '{path}': {e}");
+            eprintln!("could not read '{}': {e}", entry_file.display());
             ExitCode::from(2)
         }
     }
@@ -148,12 +160,45 @@ fn cmd_check(path: &Path) -> ExitCode {
     }
 }
 
+/// `build`: requires a real Project (`project::
+/// require_project_entry_point` — checked up front so "not a Project"
+/// gets its own exit code, distinct from an ordinary validation
+/// failure) and certifies it as a valid, distributable Source Artifact
+/// under the 1.0 model — it does not copy, package, or write anything
+/// to disk. `2` — not a Project at all (no manifest); `1` — a Project,
+/// but its source graph fails to resolve/parse/type-check; `0` — valid.
+fn cmd_build(path: &Path) -> ExitCode {
+    if let Err(d) = obfusku_cli::project::require_project_entry_point(path) {
+        eprintln!("{}", obfusku_cli::render_diagnostics("", &[d]));
+        return ExitCode::from(2);
+    }
+    match obfusku_cli::build_project(path) {
+        Ok(warnings) => {
+            if !warnings.is_empty() {
+                eprintln!("{}", render_warnings(path, &warnings));
+            }
+            println!(
+                "Project at '{}' is a valid Source Artifact.",
+                path.display()
+            );
+            ExitCode::SUCCESS
+        }
+        Err((map, diags)) => {
+            eprintln!("{}", obfusku_cli::render_diagnostics_map(&map, &diags));
+            ExitCode::from(1)
+        }
+    }
+}
+
 /// Renders `run`/`check`'s non-fatal warnings against `path`'s own
 /// text — a fresh `SourceMap` built just for this, since a warning's
 /// span always belongs to `path` itself (unreachable-arm detection
 /// never looks at an imported module's own body).
 fn render_warnings(path: &Path, warnings: &[obfusku_diagnostics::Diagnostic]) -> String {
-    let source = std::fs::read_to_string(path).unwrap_or_default();
+    let entry_file = obfusku_cli::project::resolve_entry_point(path)
+        .map(|e| e.entry_file)
+        .unwrap_or_else(|_| path.to_path_buf());
+    let source = std::fs::read_to_string(&entry_file).unwrap_or_default();
     obfusku_cli::render_diagnostics(&source, warnings)
 }
 
@@ -200,10 +245,17 @@ fn cmd_inspect(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     };
     let kind = kind.unwrap_or(InspectKind::Core);
-    let source = match std::fs::read_to_string(path) {
+    let entry_file = match obfusku_cli::project::resolve_entry_point(Path::new(path)) {
+        Ok(entry) => entry.entry_file,
+        Err(d) => {
+            eprintln!("{}", obfusku_cli::render_diagnostics("", &[d]));
+            return ExitCode::from(2);
+        }
+    };
+    let source = match std::fs::read_to_string(&entry_file) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("could not read '{path}': {e}");
+            eprintln!("could not read '{}': {e}", entry_file.display());
             return ExitCode::from(2);
         }
     };

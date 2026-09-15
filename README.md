@@ -66,21 +66,43 @@ cd obfusku
 cargo build --release -p obfusku-cli
 ```
 
+This produces a standalone `obfusku` executable at
+`target/release/obfusku`. Cargo is only needed to build that binary —
+put it on your `PATH` and everything below uses `obfusku` directly, with
+no further dependency on Cargo, the Rust toolchain, or this repository.
+
 ## Usage
 
+Every command below accepts either a single `.obk` file or an Obfusku
+Project directory (one containing `obfusku.toml`) — a bare file needs no
+manifest at all.
+
 ```bash
-# Run an Obfusku program
-cargo run -p obfusku-cli -- run spell.obk
+# Run a program or a Project
+obfusku run spell.obk
+obfusku run my-project/
 
 # Type-check without running
-cargo run -p obfusku-cli -- check spell.obk
+obfusku check spell.obk
 
 # Format source code
-cargo run -p obfusku-cli -- fmt spell.obk
+obfusku fmt spell.obk
+
+# Certify a Project as a valid, distributable Source Artifact
+obfusku build my-project/
 
 # Interactive REPL
-cargo run -p obfusku-cli -- repl
+obfusku repl
 ```
+
+A Project directory needs an `obfusku.toml` naming its entry module:
+
+```toml
+format = 1
+entry = "main"
+```
+
+See `examples/project/` for a complete, runnable Project.
 
 ## Architecture
 

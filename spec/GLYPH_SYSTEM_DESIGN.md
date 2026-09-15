@@ -59,12 +59,12 @@ relationship to the Abstract Grammar — never by appearance alone.
   at normal size.
 - **No ASCII fallbacks for symbolic operators — Obfusku is glyph-pure.**
   Every operator this document and `CONCRETE_SYMBOLIC_GRAMMAR.md` assign a
-  dedicated glyph to (`✚ ☠︎ ✱ ÷ ⌗ − ¬ ∧ ∨ ⊻`, …) has no ASCII spelling; this
-  is a permanent design choice, not a gap awaiting a table. This is
-  unrelated to `<`/`>`/`<=`/`>=`/`==`/`!=` being plain ASCII (§8) — those
-  were never assigned a symbolic glyph to begin with, so they are not a
-  fallback for anything; the rule here concerns only operators that *do*
-  have a dedicated glyph.
+  dedicated glyph to (`✚ ☠︎ ✱ ÷ ⌗ − ¬ ∧ ∨ ⊻ ≡ ≠ ≤ ≥`, …) has no ASCII
+  spelling; this is a permanent design choice, not a gap awaiting a
+  table. `<`/`>` are the one pair kept as plain characters rather than
+  retired in favor of a minted Unicode glyph (§8.1) — not a fallback for
+  anything, since they were never displaced from anywhere; they are the
+  relational family's own roots.
 
 ---
 
@@ -261,21 +261,29 @@ other one" correctly without being told, purely from the shared circle and
 the fill-state axis. This is the clearest possible demonstration of the
 whole document's stated goal.
 
-### 6.2 Generic/wrapper types — no dedicated sigils at all
+### 6.2 Generic/wrapper types — no *new* per-type sigils, but canon names are symbolic
 
 `Array<T>`, `List<T>`, `Optional<T>`, `Result<T,E>`, `Cell<T>`, and
 `Exception` are all `TypeReference`s (Abstract Grammar §5) — ordinary
-named, generic types, not members of the closed primitive set. **The old
-catalog's `⌬` (Array) and `⌖` (Map) are rejected outright**, not for being
-poor shapes, but for a category error one level up: giving bespoke sigils
-to *some* library-defined generic types and not others was arbitrary by
-construction, no matter how well-chosen any individual glyph was. The
-fix is systemic — these are written as ordinary type names (short,
-spelled identifiers, or a small set of standard abbreviations decided at
-the Concrete Grammar stage), combined via ordinary `TypeApplication`
-juxtaposition (Abstract Grammar §5), the same mechanism any user-defined
-generic type uses. No new sigil vocabulary is needed here at all — this
-section's finding is an elimination, not an addition.
+named, generic types, not members of the closed primitive set, combined
+via ordinary `TypeApplication` juxtaposition, the same mechanism any
+user-defined generic type uses. **The old catalog's `⌬` (Array) and `⌖`
+(Map) stay rejected**, and this section's finding stays an elimination of
+*bespoke, one-off* sigils, not an addition — giving arbitrary individual
+generic types their own dedicated glyph is still the category error §6.2
+originally named.
+
+What changes: the *names themselves*, for the wrapper types Obfusku's own
+canon ships (`List`, `Optional`, and their constructors — §14), are not
+free ASCII identifiers. They are part of the language's own vocabulary,
+not user data, the same distinction that separates `map`/`filter`/`print`
+from a user's own `positives`/`counter` (§10.2, §10.3). A user's own
+`TypeDeclaration` (`Shape`, `Person`, …) is unaffected by this and may be
+named in ordinary ASCII; the language *prefers*, but does not require,
+that a user spell their own type and constructor names the way the
+canon spells `List`/`Optional` — with short symbolic tags rather than
+English words — since a mixed surface (canon symbolic, user-code
+English) is legible but not the ideal this document argues for.
 
 ---
 
@@ -338,22 +346,20 @@ exactly the "forces unrelated concepts into the same family" failure the
 brief warns against.
 
 **Resolution, which improves both assignments rather than just avoiding
-the clash:** numeric comparison doesn't need an exotic glyph at all —
-`<`/`>`/`<=`/`>=` are already universally legible with zero learning cost,
-and this is a case where *not* reaching for a special Unicode form is the
-right call (principle 2's logic applied one level further: not every
-concept needs a *symbolic* glyph, some are better served by staying
-plain). That frees `▷` — which already visually reads as a forward/play
-triangle — for **`Pipe`**, where "flowing forward" is exactly the right
-metaphor and a far better semantic fit than it ever was for comparison.
+the clash:** `<`/`>` keep their existing, already-correct mathematical
+shape rather than being displaced by an exotic new glyph (principle 2's
+logic applied one level further: not every concept needs a *newly
+minted* symbol — `<`/`>` are outside the English lexicon already and
+need no replacement). `==`/`!=`/`<=`/`>=` do not share that exemption;
+per ADR-016 they are retired in favor of `≡`/`≠`/`≤`/`≥`, keeping the
+relational family fully symbolic — see §8.1. This leaves `▷` — which
+already visually reads as a forward/play triangle — entirely free for
+**`Pipe`**, where "flowing forward" is exactly the right metaphor and a
+far better semantic fit than it ever was for comparison.
 
 ```
-xs ▷ filter(◈ ○> 0) ▷ map(◈ ✱ 2)
+xs ▷ filter(◈ > 0) ▷ map(◈ ✱ 2)
 ```
-
-(`○>` above is illustrative ASCII-mixed shorthand for whichever
-comparison glyph is finalized in Concrete Grammar — not a proposal in
-itself.)
 
 - **`◈` (pipeline-value reference)** — adopted as-is; it was already used
   as a working stand-in throughout this project's design documents, isn't
@@ -372,6 +378,31 @@ a stage forces the expression-with-reference interpretation (Core §7)
 unconditionally; `•` inside such a stage would be ambiguous about which
 mechanism governs that position, and is rejected rather than given an
 implicit resolution rule.
+
+### 8.1 Relational family (ADR-016)
+
+**Root: `<`/`>`, kept rather than reassigned — see §8.** **Modifier
+axis: an "or-equal" mark, shared with the equality root rather than
+invented twice.**
+
+```
+a < b      -- StrictLessThan
+a > b      -- StrictGreaterThan
+a ≤ b      -- LessThanOrEqual
+a ≥ b      -- GreaterThanOrEqual
+a ≡ b      -- Equal
+a ≠ b      -- NotEqual
+```
+
+`≡`/`≠` are a peer pair (fill-state-style, mirroring `◉`/`◎`), not a
+`</`>` variant — equality is not "less-or-greater," it is its own
+relation. `≤`/`≥` reuse the strict roots plus the same visual
+equality-bar that distinguishes `≡` from `≔`, so a learner who has seen
+`<` and `≡` separately can read `≤` correctly on first encounter — the
+inference test §0.3 requires.
+
+Per ADR-014's surviving glyph-purity rule, none of `≡ ≠ < > ≤ ≥` take an
+ASCII alias.
 
 ---
 
@@ -454,6 +485,267 @@ the precise consequence of adopting `❧` in this role.
 
 ---
 
+## 10.2 Host-effect family — natives are a family, not four loose names
+
+`print`, `readLine`, `readFile`, `writeFile` (ADR-010) were each a
+separate English-spelled native binding, chosen individually rather than
+as a family — the same "vocabulary, not system" failure §2 names for the
+old catalog's enclosure pairs, just relocated to the host boundary. All
+four are the same underlying thing in `SEMANTIC_CORE.md` §15.4: a
+curried, arity-1 native that crosses into the host and can fail. They
+get one root and two independent axes, the same shape as the Binder
+family (§4).
+
+**Root: `⌁`, new — no prior catalog entry names "the host boundary
+crossing" as a concept at all**, so this is exactly the case §0
+principle 5 anticipates: a new glyph only where nothing in the old
+vocabulary can be repurposed for the *role*.
+
+**Direction axis (postfix):** `↑` — value leaves the program toward the
+host (an emit). `↓` — a value arrives from the host (a read).
+
+**Medium axis (postfix, present only where the default is overridden):**
+console is the unmarked default; `⌬` — freed by §6.2's rejection of the
+old Array sigil, reused here for "the medium is a file," a genuine
+different role from its old one, not a restoration.
+
+```
+⌁↑ : ⌘ → ∅         -- print      (emit to console)
+⌁↓ : ∅ → ⌘         -- readLine   (read from console)
+⌁↓⌬ : ⌘ → ⌘         -- readFile   (read a file, path in, content out)
+⌁↑⌬ : ⌘ → (⌘ → ∅)   -- writeFile  (write a file, curried path then content)
+```
+
+**Inference test:** a learner who has only seen `⌁↑` (print) and `⌁↓`
+(readLine) can correctly predict that `⌁↓⌬` reads *from a file* and
+`⌁↑⌬` writes *to a file* — both axes compose independently, exactly as
+the Binder family's mutability/export marks do.
+
+Host-native failures keep using the existing tagged-failure mechanism
+(ADR-010) unchanged; this section only replaces the four natives'
+spelling, not their typing or failure behavior.
+
+## 10.3 Collection-combinator and List/Optional construction
+
+**Combinators are a matched peer set, not a root+modifier family** —
+`map`, `filter`, `fold` (and the smaller ambient operations,
+`CONCRETE_SYMBOLIC_GRAMMAR.md` "Combinators") are independent
+operations on a collection, not variations of one underlying concept
+(principle 4), the same reasoning §6.1 applies to the primitive base
+types.
+
+```
+xs ▷ ⟐(double)        -- map      (⟐: apply to each)
+xs ▷ ⌿(isPositive)    -- filter   (⌿: keep matching)
+xs ▷ ⌽(sum, 0)        -- fold     (⌽: combine down to one)
+```
+
+None of the three collide with an existing glyph or family; they are
+adopted as a set rather than singly, so a learner meets them together
+rather than accumulating them one at a time as unrelated vocabulary.
+
+**`List`/`Optional` construction extends the presence/absence logic §6.1
+already established for `Bool`, rather than inventing a second one.**
+`Nil` and `None` are both "the closed, empty case" of their respective
+type — structurally the same role `◉`/`◎` play for `Bool`. They do
+**not**, however, literally share one codepoint the way `→` serves both
+a `Match` arm's result and a `FunctionType`'s arrow (§7) — that arrow
+reuse works because `Match`/`FunctionType` are different *grammatical
+positions*, disambiguated by the parser before typing ever runs, whereas
+`Nil`/`None` would be the same `Constructor` production in the same
+position, resolved only afterward by inference. The implementation's
+constructor registry (`obfusku-typecheck`'s `AdtRegistry`) indexes every
+variant by tag spelling in one flat, module-wide table — a real,
+load-bearing constraint discovered while implementing this section, not
+a stylistic preference — so two different ADTs cannot register the same
+tag text at all, regardless of whether a human reader could disambiguate
+them by type. `⊘`/`⦰` are a visually cognate pair instead — same
+"circle with a stroke through it" family, distinct codepoints — rather
+than one shared glyph:
+
+```
+⊘                     -- Nil (List's closed/empty case)
+⦰                     -- None (Optional's closed/empty case)
+⁝(h, t)                -- Cons(h, t)
+⧫(x)                  -- Some(x)
+```
+
+**Inference test:** a learner who knows `⊘` means "the empty/absent
+case" for `List` can recognize `⦰` as the same *concept* for `Optional`
+from the shared circle-and-stroke family, without needing to relearn
+the underlying idea — the family carries the inference, the codepoint
+identity doesn't have to. A learner who has seen `⁝` build up a `List`
+can correctly guess that `⧫` is the "there is a value here" counterpart
+to `⦰` for `Optional`, from the shared construction-gives-a-payload
+pattern.
+
+Per §6.2, these are the language's own canon names, not user data; a
+user's own `TypeDeclaration` may still use English constructor names
+(`Circle`, `Rectangle`), though a symbolic spelling in the same style is
+preferred, not required.
+
+## 10.4 `Result<T,E>` construction — a disjoint-outcome family, not a presence/absence one
+
+`Result<T,E>` is the standard library's *expected*-failure channel
+(`DESIGN_VISION.md` §6), an ordinary two-constructor generic ADT
+consumed via pattern matching, deliberately separate from `Exception`'s
+unwind mechanism. **It must not reuse `Optional`'s `⊘`/`⦰`/`⧫` family**
+— `Err(e)` is not "the empty/absent case," it is a genuine alternative
+outcome carrying its own payload; borrowing the presence/absence family
+for it would be exactly the "found a shape, applied it to the wrong
+concept" mistake this document's whole discipline exists to avoid.
+
+**Root: `✓`/`✗`, cherry-picked for real pre-existing meaning** (the
+same standard `GLYPH_SYSTEM_DESIGN.md` has held every prior root to —
+`λ`, `≔`, `☄`/`☊`) — a universally recognized approval/rejection pair,
+unrelated to any glyph already in this catalog, so no collision and no
+manufactured shape:
+
+```
+Result t e ≔ { ✓(t) ⟢ ✗(e) }
+```
+
+`Bool`'s `◉`/`◎` (truth/falsity) and `Optional`'s `⊘`/`⦰` (presence/
+absence) are each their own disjoint pair, not variants of one another;
+`✓`/`✗` (successful/failed outcome) joins them as a third, independent
+two-outcome family — related in *shape* (each is a minimal binary
+pair), never in *meaning*:
+
+```
+Bool:      ◉ / ◎   — truth / falsity
+Optional:  ⧫ / ⦰   — presence / absence
+Result:    ✓ / ✗   — successful outcome / failed outcome
+```
+
+**No combinators in this pass, deliberately.** Construction plus
+pattern matching is the entire 1.0 surface — the same minimal slice
+already shipped for `Optional`. A `map`/`andThen`/`unwrapOr`-style
+vocabulary is left for a later, separate decision once the type itself
+has shipped; not deciding it now keeps this addition symmetric with
+`Optional`'s own precedent rather than growing the two inconsistently.
+
+## 10.5 `Array<T>` combinators — two families, not one flat list
+
+`Array<T>`'s own type is already frozen at the Core level
+(`SEMANTIC_CORE.md` §9.2); what was never decided is its combinator
+surface. Two findings shape this section, both load-bearing:
+
+**`⟐`/`⌿`/`⌽` cannot be reused for `Array`.** Obfusku has no ad-hoc
+overloading or higher-kinded abstraction (`SEMANTIC_CORE.md` §4's kind
+model is explicit that this is a firm boundary, not a gap) — the
+prelude binds one name to exactly one `Scheme`, so a single glyph can
+never dispatch to a different implementation by argument type. A
+family relationship between `List`'s and `Array`'s combinators can
+only ever be *visual*, never a shared binding.
+
+**§10.3's `⟐`/`⌿`/`⌽` were themselves already a matched peer set, not
+a root+modifier family** — there is no shared root to extend with an
+"Array" modifier in the first place (unlike `≔˚⟳`'s genuine modifier
+axis). Retrofitting them into one would mean redefining already-shipped
+canon for no functional gain, since sharing a token never produced real
+dispatch anyway.
+
+**Resolution: `Array` gets its own new peer set, in two families by
+role, not one set of five** — `length`/`set` are not the same kind of
+operation as `map`/`filter`/`fold` (a metadata query and a persistent
+positional write, versus three structural transformations), and
+grouping them together would repeat exactly the "vocabulary, not
+system" mistake §2 named in the old catalog.
+
+**Transformation triad — a squared-operator family**, distinct in
+silhouette from `⟐`/`⌿`/`⌽`'s open shapes, chosen to communicate
+`Array`'s bounded, positional structure (the one property that
+actually distinguishes it from `List`, per §9.1's own resolved
+distinction) rather than to merely look different:
+
+```
+⊡  map     — "apply at each position" (·, inner dot: apply)
+⊟  filter  — "exclude" (−, inner minus)
+⊞  fold    — "combine" (+, inner plus)
+```
+
+**Inference test:** a learner who has seen `⊞` (fold, "combine," inner
+`+`) and `⊡` (map, "apply," inner `·`) can plausibly infer `⊟`
+("exclude," inner `−`) without prior exposure — the family carries the
+inference through the shared square silhouette plus the arithmetic
+sign inside it, exactly the mechanism `≤`/`≥` already use with the
+equality mark.
+
+**Structural pair — deliberately not part of the triad above**, since
+`length` and `set` are a different role (query, persistent write), not
+a fourth and fifth transformation:
+
+```
+#  length : Array<T> → Int
+⊙  set    : Array<T> → Int → T → Array<T>
+```
+
+`#` is the root of a cardinality/measurement family — its shape
+already carries a stable count association independent of this
+project, and `length` is simply its first and, for 1.0, only member;
+no further members are manufactured just to justify the root. `⊙`
+("a marked position with a value deposited into it") is `set`'s own
+root, deliberately not visually related to `#` — a query and a write
+are different operations, not two axes of one concept, so they do not
+share a family the way `≔`'s mutability/export modifiers do.
+
+`set` is persistent, matching §2's "updating a constructed value means
+producing a new one" — it never mutates its `Array` argument, and is
+unrelated to `Cell<T>`'s mutation mechanism (`⚙︎`), which this section
+does not touch. `get` is deliberately not added: `IndexExpr` (`arr[i]`,
+already shipped, `SEMANTIC_CORE.md` §9.2) already is read access:
+naming a second function for the same operation would duplicate
+surface without adding expressiveness. `append`/`push`/`concat`/
+`slice` are out of scope for the same reason `SEMANTIC_CORE.md` §9.2's
+own "not covered by this slice" list never named them — they are not
+implied by "combinators," they would be a separate, later decision.
+
+Because `Array` combinators cannot be hand-written in `.obk` source the
+way `List`'s were (§9.1 rules out structural destructuring against
+`Array`, so there is no `Cons`/`Nil`-style recursion to write them
+against), all five are host-provided natives — see the accompanying
+ADR for why this extends the native mechanism beyond the I/O boundary
+it was originally scoped to.
+
+## 10.6 Numeric conversion family — `Int ↔ Real`
+
+`SEMANTIC_CORE.md` §20.2 forbids implicit `Int`/`Real` coercion at every
+operator; §20.3 specifies the two explicit conversions that remain the
+only way to cross between them. Two candidates were rejected before
+settling on a new pair:
+
+- **Reusing the primitive-type glyphs `⟁`/`⧆` as callable conversion
+  names** (`⟁(x)` = "make this an `Int`") was rejected: those are fixed
+  lexer tokens (`TokenKind::TyInt`/`TyReal`), permanently type-position
+  only — treating them as value-level identifiers too would reopen the
+  same class of lexical/grammar surgery already rejected for compound
+  import paths (`ADR-018`), for a convenience, not a necessity.
+- **Reusing `↑`/`↓`** (the host-effect family's direction axis, §10.2)
+  was rejected on metaphor grounds, not token collision: those already
+  mean "emit"/"read" for a specific, unrelated family. Reusing their
+  *shape* for "widen"/"narrow" here would be exactly the "same glyph,
+  different meaning" confusion this document's discipline exists to
+  prevent, independent of whether the lexer could technically tell them
+  apart by context.
+
+**Root: a new diagonal-arrow pair, unclaimed by any existing family:**
+
+```
+↗ : Int → Real   — toReal, widen (Int is the exact/discrete domain; Real, the continuous one)
+↘ : Real → Int   — toInt, narrow, partial per §20.3's three-way contract
+```
+
+**Inference test:** a learner who has seen `↗` (widen) can correctly
+infer `↘` as its inverse without prior exposure — same diagonal axis,
+opposite direction, mirroring how `≤`/`≥` share one axis and `⊘`/`⦰`
+share one family without sharing one meaning.
+
+This is deliberately a **closed, two-member family** — no third or
+fourth conversion (`String↔Int`, a rounding-mode axis, etc.) is implied
+by this pair, and none is added here.
+
+---
+
 ## 11. Reserved/invalid combinations — consolidated
 
 - Mutability modifier (`˚`) on `FunctionDeclaration`'s `λ` — invalid (§4).
@@ -466,6 +758,10 @@ the precise consequence of adopting `❧` in this role.
   `TypeReference` is grammatically required, or vice versa — these are
   different productions (Abstract Grammar §5) and shouldn't be
   interchangeable at the surface either.
+- `⁝`/`⧫`/`⊘`/`⦰` used against the wrong type (`⁝`/`⊘` are `List`-only;
+  `⧫`/`⦰` are `Optional`-only) — rejected as an ordinary unknown- or
+  wrong-arity-constructor error from `AdtRegistry`, the same as any
+  other misapplied constructor tag; not a special grammar-level rule.
 
 ---
 
@@ -489,10 +785,21 @@ the precise consequence of adopting `❧` in this role.
 | `☍` | Bool | **Rejected** | No stated semantic grounding — the exact "found a glyph" pattern being avoided |
 | `◉◎` | True/False | **Kept, promoted** | Genuinely good existing minimal family, extended to cover `Bool` itself (§6.1) |
 | `∅` | Null | **Repurposed → Unit** | Freed by rejecting universal null; strong pre-existing "nothing" grounding fits `Unit` better |
-| `⌬⌖` | Array/Map | **Rejected outright** | Category error: bespoke sigils for some generic types and not others (§6.2) |
-| `▷◁` | Greater/Less-than | **Reassigned** | `▷` moves to `Pipe`; comparison uses plain ASCII instead (§8) |
+| `⌬` | Array | **Rejected as a type sigil, repurposed as effect modifier** | No bespoke-per-type sigil (§6.2); reused as the host-effect family's file-medium mark (§10.2), a different role |
+| `⌖` | Map | **Rejected outright** | Category error: bespoke sigils for some generic types and not others (§6.2) |
+| `▷◁` | Greater/Less-than | **Reassigned** | `▷` moves to `Pipe`; `<`/`>` kept as the relational family's own roots (§8, §8.1) |
+| `==`/`!=`/`<=`/`>=` | Equal/NotEqual/LessOrEqual/GreaterOrEqual | **Symbolized** | `≡`/`≠`/`≤`/`≥` — relational family completed, glyph-purity extended to comparison (ADR-016, §8.1) |
 | `→` | Arrow (assignment target) | **Kept, repurposed** | Freed by the Binder family; reused for `Match`-arm/function-type arrow (§7) |
 | `◈`, `•` | — | **New** | No prior catalog role exists for a light inline reference/hole mark (§8) |
+| `⌁` | — | **New** | No prior catalog role for "the host boundary" as a concept; root of the effect family (§10.2) |
+| `↑`, `↓` | — | **New** | Effect-family direction axis (§10.2) |
+| `⟐`, `⌿`, `⌽` | — | **New** | Collection-combinator set, replacing `map`/`filter`/`fold` (§10.3) |
+| `⊘`, `⦰` | — | **New, cognate pair** | `Nil` (`List`), `None` (`Optional`) — same visual family, distinct tags (§10.3) |
+| `⁝`, `⧫` | — | **New** | `Cons` (`List`), `Some` (`Optional`) construction (§10.3) |
+| `✓`, `✗` | — | **New, disjoint-outcome pair** | `Ok`/`Err` construction for `Result<T,E>` — peer family to `◉`/`◎` and `⊘`/`⦰`, never sharing meaning with either (§10.4) |
+| `⊡`, `⊟`, `⊞` | — | **New, squared-operator triad** | `Array` `map`/`filter`/`fold` — deliberately not `⟐`/`⌿`/`⌽`, no shared binding is possible (§10.5) |
+| `#`, `⊙` | — | **New, unpaired** | `Array` `length`/`set` — different role from the transformation triad, not visually related to each other either (§10.5) |
+| `↗`, `↘` | — | **New, cognate pair** | `Int→Real`/`Real→Int` explicit conversion — deliberately not `⟁`/`⧆` (fixed type-position tokens) nor `↑`/`↓` (already claimed by the host-effect family) (§10.6) |
 | `˚` (mutability), postfix `⟳` role | — | **New / repositioned** | No modifier-role precedent in the old catalog at all (§4) |
 | `○` (Bool type) | — | **New, minimal extension** | Completes an already-good existing pair rather than inventing from nothing (§6.1) |
 
@@ -500,10 +807,17 @@ the precise consequence of adopting `❧` in this role.
 
 ## Verdict
 
-This is a candidate glyph system, not a locked one — several exact
-codepoints (the mutability mark, the argument-hole mark's final shape,
-short names for generic wrapper types) are explicitly left to a Concrete
-Symbolic Grammar pass. What's fixed here is the *architecture*: fewer
+This was a candidate glyph system at the time this section was written,
+not a locked one — several exact codepoints (the mutability mark, the
+argument-hole mark's final shape, short names for generic wrapper types)
+were explicitly left to a Concrete Symbolic Grammar pass. That pass has
+since happened: `CONCRETE_SYMBOLIC_GRAMMAR.md` §20 records the
+mutability mark and argument-hole codepoints as resolved (`˚`, `•`), and
+`List`/`Optional` are implemented under their full spelled names with
+symbolic constructors (§10.2/§10.3 above). `Array`/`Result`/`Cell`
+naming is a separate, still-open stdlib-content question now, not a
+leftover from this document. What's fixed here is the
+*architecture*: fewer
 roots, real modifier axes, one generic enclosure mechanism instead of
 five bespoke ones, and — per the added instruction this round — a
 demonstrated willingness to eliminate a glyph entirely (`Return`, `Call`,

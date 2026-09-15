@@ -560,7 +560,7 @@ fn string_concatenation_end_to_end() {
 
 #[test]
 fn comparison_and_equality_end_to_end() {
-    let v = run_ok("result ≔ (1 < 2) ∧ (2 == 2)\n❧");
+    let v = run_ok("result ≔ (1 < 2) ∧ (2 ≡ 2)\n❧");
     assert!(matches!(v, Value::Bool(true)));
 }
 
@@ -574,13 +574,13 @@ fn xor_end_to_end() {
 fn and_short_circuits_end_to_end_the_second_operand_never_runs() {
     // False ∧ (1 ÷ 0 == 1): if ∧ evaluated the right side, this would
     // raise DivisionByZero. It must not.
-    let v = run_ok("result ≔ ◎ ∧ ((1 ÷ 0) == 1)\n❧");
+    let v = run_ok("result ≔ ◎ ∧ ((1 ÷ 0) ≡ 1)\n❧");
     assert!(matches!(v, Value::Bool(false)));
 }
 
 #[test]
 fn and_does_not_short_circuit_when_the_left_side_is_true() {
-    let diags = run_err("result ≔ ◉ ∧ ((1 ÷ 0) == 1)\n❧");
+    let diags = run_err("result ≔ ◉ ∧ ((1 ÷ 0) ≡ 1)\n❧");
     assert!(
         diags[0].message.contains("DivisionByZero"),
         "{}",
@@ -590,13 +590,13 @@ fn and_does_not_short_circuit_when_the_left_side_is_true() {
 
 #[test]
 fn or_short_circuits_end_to_end_the_second_operand_never_runs() {
-    let v = run_ok("result ≔ ◉ ∨ ((1 ÷ 0) == 1)\n❧");
+    let v = run_ok("result ≔ ◉ ∨ ((1 ÷ 0) ≡ 1)\n❧");
     assert!(matches!(v, Value::Bool(true)));
 }
 
 #[test]
 fn or_does_not_short_circuit_when_the_left_side_is_false() {
-    let diags = run_err("result ≔ ◎ ∨ ((1 ÷ 0) == 1)\n❧");
+    let diags = run_err("result ≔ ◎ ∨ ((1 ÷ 0) ≡ 1)\n❧");
     assert!(
         diags[0].message.contains("DivisionByZero"),
         "{}",
@@ -624,7 +624,7 @@ fn negative_modulo_end_to_end() {
 fn nan_equals_nan_end_to_end() {
     // 0.0 ÷ 0.0 == 0.0 ÷ 0.0 — both sides NaN, must be True (§18 total
     // equality), even though NaN < NaN etc. would be False.
-    let v = run_ok("result ≔ (0.0 ÷ 0.0) == (0.0 ÷ 0.0)\n❧");
+    let v = run_ok("result ≔ (0.0 ÷ 0.0) ≡ (0.0 ÷ 0.0)\n❧");
     assert!(matches!(v, Value::Bool(true)));
 }
 
@@ -984,7 +984,7 @@ fn chained_indexing_of_nested_arrays_end_to_end() {
 
 #[test]
 fn array_equality_end_to_end() {
-    let v = run_ok("a ≔ [1, 2, 3]\nb ≔ [1, 2, 3]\nresult ≔ ⟡ (a == b) {\n  ◉ → 1\n  ⟢ ◎ → 0\n}\n❧");
+    let v = run_ok("a ≔ [1, 2, 3]\nb ≔ [1, 2, 3]\nresult ≔ ⟡ (a ≡ b) {\n  ◉ → 1\n  ⟢ ◎ → 0\n}\n❧");
     assert_eq!(as_int(v), 1);
 }
 

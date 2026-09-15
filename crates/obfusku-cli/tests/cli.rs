@@ -510,13 +510,21 @@ fn inspect_unknown_flag_exits_two() {
 }
 
 #[test]
-fn build_and_test_are_explicitly_deferred_not_silently_missing() {
-    for cmd in ["build", "test"] {
-        let out = bin().arg(cmd).output().unwrap();
-        assert_eq!(out.status.code(), Some(2));
-        let stderr = String::from_utf8(out.stderr).unwrap();
-        assert!(stderr.contains("not yet supported"), "{stderr}");
-    }
+fn test_is_explicitly_deferred_not_silently_missing() {
+    // `build` is implemented (see `tests/project.rs`) — only `test`
+    // remains a deliberate stub here.
+    let out = bin().arg("test").output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("not yet supported"), "{stderr}");
+}
+
+#[test]
+fn build_with_no_path_argument_reports_the_ordinary_missing_argument_message() {
+    let out = bin().arg("build").output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("expected a file path"), "{stderr}");
 }
 
 #[test]
@@ -569,8 +577,8 @@ fn repl_has_ambient_stdlib_and_io_but_not_filesystem_natives() {
     // whole-buffer-rerun design, which excluded this ambient environment
     // specifically because re-evaluating history would replay effects —
     // that hazard no longer applies, since each line evaluates exactly
-    // once): `print`/`readLine` and the ambient stdlib (`List`/`Cons`/
-    // `Nil`/`map`) now collide as already-bound prelude names, exactly
+    // once): `print`/`readLine` and the ambient stdlib (`List`/`⁝`/
+    // `⊘`/`⟐`) now collide as already-bound prelude names, exactly
     // like `run`/`check`. `readFile`/`writeFile` deliberately still
     // don't — the REPL has no single entry file to scope a filesystem
     // capability against (`LANGUAGE_SPEC.md` §5's still-open artifact
@@ -586,9 +594,9 @@ fn repl_has_ambient_stdlib_and_io_but_not_filesystem_natives() {
         let stdin = child.stdin.as_mut().unwrap();
         stdin
             .write_all(
-                "print \u{2254} 1\nreadLine \u{2254} 2\nmap \u{2254} 3\nfilter \u{2254} 4\n\
-                 readFile \u{2254} 5\nwriteFile \u{2254} 6\n\
-                 result \u{2254} readFile \u{271A} writeFile\n\
+                "\u{2301}\u{2191} \u{2254} 1\n\u{2301}\u{2193} \u{2254} 2\n\u{27D0} \u{2254} 3\n\u{233F} \u{2254} 4\n\
+                 \u{2301}\u{2193}\u{232C} \u{2254} 5\n\u{2301}\u{2191}\u{232C} \u{2254} 6\n\
+                 result \u{2254} \u{2301}\u{2193}\u{232C} \u{271A} \u{2301}\u{2191}\u{232C}\n\
                  :quit\n"
                     .as_bytes(),
             )
@@ -604,7 +612,7 @@ fn repl_has_ambient_stdlib_and_io_but_not_filesystem_natives() {
         .count();
     assert_eq!(
         collisions, 4,
-        "expected exactly print/readLine/map/Cons to collide, none of readFile/writeFile: {stderr}"
+        "expected exactly \u{2301}\u{2191}/\u{2301}\u{2193}/\u{27D0}/\u{233F} to collide, none of \u{2301}\u{2193}\u{232C}/\u{2301}\u{2191}\u{232C}: {stderr}"
     );
 }
 
@@ -626,7 +634,7 @@ fn repl_evaluates_each_line_exactly_once_no_effect_replay() {
         let stdin = child.stdin.as_mut().unwrap();
         stdin
             .write_all(
-                "a \u{2254} print(\u{22}once\u{22})\nx \u{2254} 1\ny \u{2254} 2\nz \u{2254} 3\n:quit\n"
+                "a \u{2254} \u{2301}\u{2191}(\u{22}once\u{22})\nx \u{2254} 1\ny \u{2254} 2\nz \u{2254} 3\n:quit\n"
                     .as_bytes(),
             )
             .unwrap();
@@ -670,7 +678,7 @@ fn repl_shares_mutable_state_correctly_across_lines() {
 fn a_local_generic_function_reused_at_two_types_type_checks_with_the_ambient_stdlib_prelude() {
     // P0-B's original repro, through the real binary: `stdlib::load()`
     // seeds several of its own polymorphic schemes (`map`/`filter`/
-    // `fold`/`Nil`/`Cons`) from a completely separate `Checker` before
+    // `\u{233D}`/`\u{2298}`/`\u{205D}`) from a completely separate `Checker` before
     // this file is ever type-checked — a local generic function must
     // still generalize and be reused at two different types despite
     // that ambient prelude being present.
@@ -811,7 +819,7 @@ fn importing_a_nonexistent_module_is_a_clear_error_not_a_panic() {
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(
-        stderr.contains("could not read imported module"),
+        stderr.contains("does not resolve to any") && stderr.contains("doesnotexist"),
         "{stderr}"
     );
 }
@@ -939,9 +947,9 @@ fn an_imported_generic_adt_pattern_matches_correctly_at_two_different_instantiat
 
 #[test]
 fn stdlib_list_pattern_matching_works_without_any_local_declaration() {
-    // The exact case named as mandatory: `Nil`/`Cons` come from the
+    // The exact case named as mandatory: `\u{2298}`/`\u{205D}` come from the
     // *ambient* stdlib prelude (no `⟲`, no local `List` declaration at
-    // all) — previously this failed with "unknown constructor 'Nil' in
+    // all) — previously this failed with "unknown constructor '\u{2298}' in
     // pattern" despite `List<T>` being recorded as "Implemented,
     // verified end-to-end" in ROADMAP.md. That verification, in
     // hindsight, only ever exercised a *locally re-declared* `List`
@@ -949,9 +957,9 @@ fn stdlib_list_pattern_matching_works_without_any_local_declaration() {
     // via_explicit_type_application`), never the real ambient path a
     // user program actually takes — this is the test that closes that
     // coverage gap.
-    let src = "xs \u{2254} Cons(1, Cons(2, Nil))\n\
+    let src = "xs \u{2254} \u{205D}(1, \u{205D}(2, \u{2298}))\n\
                result \u{2254} \u{27E1} xs {\n \
-               Nil \u{2192} 0\n \u{27E2} Cons(h, t) \u{2192} h\n}\n\u{2767}\n";
+               \u{2298} \u{2192} 0\n \u{27E2} \u{205D}(h, t) \u{2192} h\n}\n\u{2767}\n";
     let out = bin()
         .arg("run")
         .arg(write_temp(src).path())
@@ -1308,7 +1316,7 @@ fn a_dotted_real_literal_with_an_exponent_is_unaffected() {
     assert!(stdout.contains("Real(50000000000.0)"), "{stdout}");
 }
 
-// ── Stdlib (`List<T>`, `map`/`filter`/`fold`) as an implicit prelude —
+// ── Stdlib (`List<T>`, `\u{27D0}`/`\u{233F}`/`\u{233D}`) as an implicit prelude —
 //    ambiently available with no `⟲`, ordinary `.obk` source (see
 //    `obfusku_cli::stdlib`), zero new Core surface. ──────────────────
 
@@ -1317,9 +1325,9 @@ fn map_is_ambiently_available_and_recurses_over_a_multi_element_list() {
     let f = write_temp(
         "\u{3bb}addOne(n: \u{27c1}): \u{27c1} \u{2192} 1 \u{271a} n\n\
          \u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         xs \u{2254} Cons(1, Cons(2, Cons(3, Nil)))\n\
-         mapped \u{2254} map(addOne, xs)\n\
-         result \u{2254} fold(addInts, 0, mapped)\n\u{2767}\n",
+         xs \u{2254} \u{205D}(1, \u{205D}(2, \u{205D}(3, \u{2298})))\n\
+         mapped \u{2254} \u{27D0}(addOne, xs)\n\
+         result \u{2254} \u{233D}(addInts, 0, mapped)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1334,9 +1342,9 @@ fn filter_is_ambiently_available_and_keeps_only_matching_elements() {
         "\u{3bb}isEven(n: \u{27c1}): \u{25cb} \u{2192} \u{27e1} n \u{2317} 2 {\n  \
          0 \u{2192} \u{25c9}\n  \u{27e2} _ \u{2192} \u{25ce}\n}\n\
          \u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         xs \u{2254} Cons(1, Cons(2, Cons(3, Cons(4, Nil))))\n\
-         filtered \u{2254} filter(isEven, xs)\n\
-         result \u{2254} fold(addInts, 0, filtered)\n\u{2767}\n",
+         xs \u{2254} \u{205D}(1, \u{205D}(2, \u{205D}(3, \u{205D}(4, \u{2298}))))\n\
+         filtered \u{2254} \u{233F}(isEven, xs)\n\
+         result \u{2254} \u{233D}(addInts, 0, filtered)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1349,7 +1357,7 @@ fn filter_is_ambiently_available_and_keeps_only_matching_elements() {
 fn fold_over_nil_returns_the_seed_unchanged() {
     let f = write_temp(
         "\u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         result \u{2254} fold(addInts, 0, Nil)\n\u{2767}\n",
+         result \u{2254} \u{233D}(addInts, 0, \u{2298})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1363,7 +1371,7 @@ fn filter_over_nil_is_nil_and_folds_to_the_seed() {
         "\u{3bb}isEven(n: \u{27c1}): \u{25cb} \u{2192} \u{27e1} n \u{2317} 2 {\n  \
          0 \u{2192} \u{25c9}\n  \u{27e2} _ \u{2192} \u{25ce}\n}\n\
          \u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         result \u{2254} fold(addInts, 0, filter(isEven, Nil))\n\u{2767}\n",
+         result \u{2254} \u{233D}(addInts, 0, \u{233F}(isEven, \u{2298}))\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1375,7 +1383,7 @@ fn filter_over_nil_is_nil_and_folds_to_the_seed() {
 fn fold_over_a_singleton_list_applies_the_combining_function_exactly_once() {
     let f = write_temp(
         "\u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         result \u{2254} fold(addInts, 100, Cons(7, Nil))\n\u{2767}\n",
+         result \u{2254} \u{233D}(addInts, 100, \u{205D}(7, \u{2298}))\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1385,12 +1393,12 @@ fn fold_over_a_singleton_list_applies_the_combining_function_exactly_once() {
 
 #[test]
 fn fold_accumulates_strictly_left_to_right() {
-    // fold(f, "seed-", [a, b]) == f(f("seed-", a), b) == "seed-ab" —
-    // a right-to-left (or reordered) fold would produce a different
+    // \u{233D}(f, "seed-", [a, b]) == f(f("seed-", a), b) == "seed-ab" —
+    // a right-to-left (or reordered) \u{233D} would produce a different
     // string, so this pins down the accumulator's evaluation order.
     let f = write_temp(
         "\u{3bb}concatStr(acc: \u{2318}, s: \u{2318}): \u{2318} \u{2192} acc \u{271a} s\n\
-         result \u{2254} fold(concatStr, \u{22}seed-\u{22}, Cons(\u{22}a\u{22}, Cons(\u{22}b\u{22}, Nil)))\n\u{2767}\n",
+         result \u{2254} \u{233D}(concatStr, \u{22}seed-\u{22}, \u{205D}(\u{22}a\u{22}, \u{205D}(\u{22}b\u{22}, \u{2298})))\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1400,8 +1408,8 @@ fn fold_accumulates_strictly_left_to_right() {
 
 #[test]
 fn map_is_genuinely_polymorphic_reusable_at_int_and_str_in_the_same_module() {
-    // `map`/`addInts`/`concatStr` are each used once at `Int` and once
-    // at `Str`, within one module — proof the stdlib's `map` really is
+    // `\u{27D0}`/`addInts`/`concatStr` are each used once at `Int` and once
+    // at `Str`, within one module — proof the stdlib's `\u{27D0}` really is
     // `∀t,u. (t → u) → List<t> → List<u>`, not implicitly pinned to
     // whichever element type happened to type-check it first.
     let f = write_temp(
@@ -1409,12 +1417,12 @@ fn map_is_genuinely_polymorphic_reusable_at_int_and_str_in_the_same_module() {
          \u{3bb}idStr(s: \u{2318}): \u{2318} \u{2192} s\n\
          \u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
          \u{3bb}concatStr(acc: \u{2318}, s: \u{2318}): \u{2318} \u{2192} acc \u{271a} s\n\
-         xsInt \u{2254} Cons(1, Cons(2, Nil))\n\
-         xsStr \u{2254} Cons(\u{22}a\u{22}, Cons(\u{22}b\u{22}, Nil))\n\
-         mappedInt \u{2254} map(addOne, xsInt)\n\
-         mappedStr \u{2254} map(idStr, xsStr)\n\
-         sumInt \u{2254} fold(addInts, 0, mappedInt)\n\
-         concatResult \u{2254} fold(concatStr, \u{22}\u{22}, mappedStr)\n\
+         xsInt \u{2254} \u{205D}(1, \u{205D}(2, \u{2298}))\n\
+         xsStr \u{2254} \u{205D}(\u{22}a\u{22}, \u{205D}(\u{22}b\u{22}, \u{2298}))\n\
+         mappedInt \u{2254} \u{27D0}(addOne, xsInt)\n\
+         mappedStr \u{2254} \u{27D0}(idStr, xsStr)\n\
+         sumInt \u{2254} \u{233D}(addInts, 0, mappedInt)\n\
+         concatResult \u{2254} \u{233D}(concatStr, \u{22}\u{22}, mappedStr)\n\
          result \u{2254} sumInt\n\u{2767}\n",
     );
     let out = bin().arg("check").arg(f.path()).output().unwrap();
@@ -1428,7 +1436,7 @@ fn map_is_genuinely_polymorphic_reusable_at_int_and_str_in_the_same_module() {
 
 #[test]
 fn a_local_binding_reusing_a_stdlib_name_is_a_static_error() {
-    let f = write_temp("map \u{2254} 5\nresult \u{2254} map\n\u{2767}\n");
+    let f = write_temp("\u{27D0} \u{2254} 5\nresult \u{2254} \u{27D0}\n\u{2767}\n");
     let out = bin().arg("check").arg(f.path()).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8(out.stderr).unwrap();
@@ -1438,7 +1446,235 @@ fn a_local_binding_reusing_a_stdlib_name_is_a_static_error() {
     );
 }
 
-// ── I/O: `readFile`/`writeFile`, scoped to the entry file's own
+// ── Stdlib `Result<T,E>` (✓/✗) as an implicit prelude ADT — ordinary
+//    construction and pattern matching, no combinators (`GLYPH_SYSTEM_
+//    DESIGN.md` §10.4). ─────────────────────────────────────────────
+
+#[test]
+fn result_ok_is_ambiently_available_and_pattern_matches() {
+    let f = write_temp(
+        "x ≔ ✓(42)\n\
+         result ≔ ⟡ x {\n  ✓(n) → n\n  ⟢ ✗(e) → 0 ☠︎ e\n}\n\u{2767}\n",
+    );
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("Int(42)"), "{stdout}");
+}
+
+#[test]
+fn result_err_is_ambiently_available_and_pattern_matches() {
+    let f = write_temp(
+        "x : Result ▷ ⟁ ▷ ⌘ ≔ ✗(\"oops\")\n\
+         result ≔ ⟡ x {\n  ✓(n) → \"got value\"\n  ⟢ ✗(e) → e\n}\n\u{2767}\n",
+    );
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("oops"), "{stdout}");
+}
+
+#[test]
+fn result_is_genuinely_polymorphic_in_both_type_parameters_independently() {
+    // Ok and Err carry unrelated types in this one program (Int/Str vs
+    // Str/Int) — proof Result<T,E> really is ∀t,e, not pinned to
+    // whichever pair happened to type-check it first.
+    let f = write_temp(
+        "a ≔ ✓(5)\n\
+         b ≔ \u{27E1} a {\n  ✓(n) → n\n  \u{27E2} ✗(e) → 0 ☠︎ e\n}\n\
+         c ≔ ✗(\"bad\")\n\
+         d ≔ \u{27E1} c {\n  ✓(s) → s\n  \u{27E2} ✗(e) → e\n}\n\
+         result ≔ b\n\u{2767}\n",
+    );
+    let out = bin().arg("check").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+}
+
+#[test]
+fn a_local_type_reusing_results_constructor_tags_is_a_static_error() {
+    let f = write_temp("Result t e ≔ { ✓(t) ⟢ ✗(e) }\nresult ≔ 1\n\u{2767}\n");
+    let out = bin().arg("check").arg(f.path()).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        stderr.contains("already bound by the ambient prelude"),
+        "{stderr}"
+    );
+}
+
+// ── Array natives (`⊡`/`⊟`/`⊞`/`#`/`⊙`) — host-provided, pure, no
+//    filesystem root (`ADR-021`, `GLYPH_SYSTEM_DESIGN.md` §10.5). ────
+
+#[test]
+fn array_map_transforms_every_element() {
+    let f = write_temp(
+        "xs ≔ [1, 2, 3]\n\
+         result ≔ ⊡(λ(x: ⟁) → x ✱ 2)(xs)\n\u{2767}\n",
+    );
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.contains("Int(2)") && stdout.contains("Int(6)"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn array_filter_keeps_only_matching_elements() {
+    let f = write_temp(
+        "xs ≔ [1, 2, 3, 4]\n\
+         result ≔ ⊟(λ(x: ⟁) → x ⌗ 2 ≡ 0)(xs)\n\u{2767}\n",
+    );
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.contains("Int(2)") && stdout.contains("Int(4)") && !stdout.contains("Int(1)"),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn array_fold_combines_left_to_right() {
+    let f = write_temp(
+        "xs ≔ [1, 2, 3, 4]\n\
+         result ≔ ⊞(λ(a: ⟁) → λ(b: ⟁) → a ✚ b)(0)(xs)\n\u{2767}\n",
+    );
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("Int(10)"), "{stdout}");
+}
+
+#[test]
+fn array_length_reports_the_element_count() {
+    let f = write_temp("result ≔ #([1, 2, 3, 4, 5])\n\u{2767}\n");
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("Int(5)"), "{stdout}");
+}
+
+#[test]
+fn array_set_is_persistent_and_does_not_mutate_the_original() {
+    let f = write_temp(
+        "xs ≔ [1, 2, 3]\n\
+         updated ≔ ⊙(xs)(1)(99)\n\
+         result ≔ xs[1] \u{271a} updated[1]\n\u{2767}\n",
+    );
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    // xs[1] (still 2, untouched) + updated[1] (99) = 101 — if `⊙`
+    // mutated `xs` in place instead of producing a new Array, this
+    // would read 198 (99 + 99) instead.
+    assert!(stdout.contains("Int(101)"), "{stdout}");
+}
+
+#[test]
+fn array_set_out_of_bounds_is_a_clear_runtime_error_not_a_crash() {
+    let f = write_temp("result ≔ ⊙([1, 2, 3])(10)(99)\n\u{2767}\n");
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("out of bounds"), "{stderr}");
+}
+
+#[test]
+fn array_natives_are_available_in_the_repl_with_no_filesystem_root() {
+    let mut child = bin()
+        .arg("repl")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin
+            .write_all("result \u{2254} #([1, 2, 3])\n:quit\n".as_bytes())
+            .unwrap();
+    }
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("Int(3)"), "{stdout}");
+}
+
+// ── Numeric conversion (`↗`/`↘`) — `SEMANTIC_CORE.md` §20.3. ─────────
+
+#[test]
+fn to_real_widens_an_int_and_participates_in_real_arithmetic() {
+    let f = write_temp("x ≔ 5\nresult ≔ ↗(x) ✚ 2.5\n\u{2767}\n");
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("Real(7.5)"), "{stdout}");
+}
+
+#[test]
+fn to_int_truncates_toward_zero() {
+    let f = write_temp("result ≔ ↘(7.9)\n\u{2767}\n");
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("Int(7)"), "{stdout}");
+}
+
+#[test]
+fn to_int_truncates_negative_fractions_toward_zero_not_down() {
+    let f = write_temp("result ≔ ↘(0.0 ☠︎ 7.9)\n\u{2767}\n");
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    // -7 (truncation), not -8 (floor) — proves toward-zero, not floor.
+    assert!(stdout.contains("Int(-7)"), "{stdout}");
+}
+
+#[test]
+fn to_int_on_infinity_is_invalid_operation_not_integer_overflow() {
+    let f = write_temp("result ≔ ↘(1.0 ÷ 0.0)\n\u{2767}\n");
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("InvalidOperation"), "{stderr}");
+}
+
+#[test]
+fn to_int_out_of_i64_range_is_integer_overflow_not_invalid_operation() {
+    let f = write_temp("result ≔ ↘(1.0e300)\n\u{2767}\n");
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("IntegerOverflow"), "{stderr}");
+}
+
+#[test]
+fn numeric_conversion_is_available_in_the_repl() {
+    let mut child = bin()
+        .arg("repl")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        let stdin = child.stdin.as_mut().unwrap();
+        stdin
+            .write_all("result \u{2254} \u{2197}(3)\n:quit\n".as_bytes())
+            .unwrap();
+    }
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{:?}", out);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.contains("Real(3.0)") || stdout.contains("Real(3)"),
+        "{stdout}"
+    );
+}
+
+// ── I/O: `⌁↓⌬`/`⌁↑⌬`, scoped to the entry file's own
 //    directory (see `obfusku_cli::natives`'s own doc comment). ────────
 
 #[test]
@@ -1446,8 +1682,8 @@ fn write_then_read_a_file_within_the_entry_directory() {
     let dir = TempObkDir::new();
     let main = dir.write(
         "main",
-        "unused \u{2254} writeFile(\u{22}data.txt\u{22})(\u{22}hello from obfusku\u{22})\n\
-         result \u{2254} readFile(\u{22}data.txt\u{22})\n\u{2767}\n",
+        "unused \u{2254} ⌁↑⌬(\u{22}data.txt\u{22})(\u{22}hello from obfusku\u{22})\n\
+         result \u{2254} ⌁↓⌬(\u{22}data.txt\u{22})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1464,7 +1700,7 @@ fn read_file_with_a_parent_traversal_path_is_permission_denied() {
     let dir = TempObkDir::new();
     let main = dir.write(
         "main",
-        "result \u{2254} readFile(\u{22}../secret.txt\u{22})\n\u{2767}\n",
+        "result \u{2254} ⌁↓⌬(\u{22}../secret.txt\u{22})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
@@ -1477,7 +1713,7 @@ fn read_file_with_an_absolute_path_is_permission_denied() {
     let dir = TempObkDir::new();
     let main = dir.write(
         "main",
-        "result \u{2254} readFile(\u{22}/etc/passwd\u{22})\n\u{2767}\n",
+        "result \u{2254} ⌁↓⌬(\u{22}/etc/passwd\u{22})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
@@ -1490,7 +1726,7 @@ fn a_denied_filesystem_access_is_catchable_by_the_existing_mechanism() {
     let dir = TempObkDir::new();
     let main = dir.write(
         "main",
-        "result \u{2254} \u{260a} (readFile(\u{22}/etc/passwd\u{22})) \u{3bb}(e) \u{2192} \u{27e1} e {\n  \
+        "result \u{2254} \u{260a} (⌁↓⌬(\u{22}/etc/passwd\u{22})) \u{3bb}(e) \u{2192} \u{27e1} e {\n  \
          Failure(tag, msg) \u{2192} tag\n  \u{27e2} DivisionByZero \u{2192} \u{22}div0\u{22}\n  \
          \u{27e2} NonExhaustiveMatch \u{2192} \u{22}nem\u{22}\n  \
          \u{27e2} InvalidOperation(m) \u{2192} m\n  \u{27e2} IntegerOverflow \u{2192} \u{22}overflow\u{22}\n}\n\u{2767}\n",
@@ -1508,7 +1744,7 @@ fn read_file_in_a_subdirectory_of_the_entry_directory_is_permitted() {
     std::fs::write(dir.0.join("sub").join("nested.txt"), "nested content").unwrap();
     let main = dir.write(
         "main",
-        "result \u{2254} readFile(\u{22}sub/nested.txt\u{22})\n\u{2767}\n",
+        "result \u{2254} ⌁↓⌬(\u{22}sub/nested.txt\u{22})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1521,7 +1757,7 @@ fn read_file_that_does_not_exist_is_an_io_error_not_a_crash() {
     let dir = TempObkDir::new();
     let main = dir.write(
         "main",
-        "result \u{2254} readFile(\u{22}does-not-exist.txt\u{22})\n\u{2767}\n",
+        "result \u{2254} ⌁↓⌬(\u{22}does-not-exist.txt\u{22})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
@@ -1559,7 +1795,7 @@ fn a_real_os_permission_error_reads_as_permission_denied_end_to_end() {
 
     let main = dir.write(
         "main",
-        "result \u{2254} readFile(\u{22}no-read.txt\u{22})\n\u{2767}\n",
+        "result \u{2254} ⌁↓⌬(\u{22}no-read.txt\u{22})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
     std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
@@ -1571,10 +1807,7 @@ fn a_real_os_permission_error_reads_as_permission_denied_end_to_end() {
 #[test]
 fn a_local_binding_reusing_the_read_file_name_is_a_static_error() {
     let dir = TempObkDir::new();
-    let main = dir.write(
-        "main",
-        "readFile \u{2254} 5\nresult \u{2254} readFile\n\u{2767}\n",
-    );
+    let main = dir.write("main", "⌁↓⌬ \u{2254} 5\nresult \u{2254} ⌁↓⌬\n\u{2767}\n");
     let out = bin().arg("check").arg(&main).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8(out.stderr).unwrap();
@@ -1586,7 +1819,7 @@ fn a_local_binding_reusing_the_read_file_name_is_a_static_error() {
 
 #[test]
 fn read_line_reads_a_real_line_from_piped_stdin() {
-    let f = write_temp("result \u{2254} readLine(\u{2205})\n\u{2767}\n");
+    let f = write_temp("result \u{2254} ⌁↓(\u{2205})\n\u{2767}\n");
     let mut child = bin()
         .arg("run")
         .arg(f.path())
@@ -1610,7 +1843,7 @@ fn read_line_reads_a_real_line_from_piped_stdin() {
 #[test]
 fn read_line_at_real_eof_raises_a_failure_catchable_by_the_existing_mechanism() {
     let f = write_temp(
-        "result \u{2254} \u{260a} (readLine(\u{2205})) \u{3bb}(e) \u{2192} \u{27e1} e {\n  \
+        "result \u{2254} \u{260a} (⌁↓(\u{2205})) \u{3bb}(e) \u{2192} \u{27e1} e {\n  \
          Failure(tag, msg) \u{2192} tag\n  \u{27e2} DivisionByZero \u{2192} \u{22}div0\u{22}\n  \
          \u{27e2} NonExhaustiveMatch \u{2192} \u{22}nem\u{22}\n  \
          \u{27e2} InvalidOperation(m) \u{2192} m\n  \u{27e2} IntegerOverflow \u{2192} \u{22}overflow\u{22}\n}\n\u{2767}\n",
@@ -1634,7 +1867,7 @@ fn read_line_at_real_eof_raises_a_failure_catchable_by_the_existing_mechanism() 
 
 #[test]
 fn read_line_uncaught_eof_is_an_uncaught_exception_not_a_crash() {
-    let f = write_temp("result \u{2254} readLine(\u{2205})\n\u{2767}\n");
+    let f = write_temp("result \u{2254} ⌁↓(\u{2205})\n\u{2767}\n");
     let mut child = bin()
         .arg("run")
         .arg(f.path())
@@ -1650,30 +1883,30 @@ fn read_line_uncaught_eof_is_an_uncaught_exception_not_a_crash() {
     assert!(stderr.contains("Failure"), "{stderr}");
 }
 
-// ── I/O: `print` as the first `Value::Native` (host-provided capability,
+// ── I/O: `⌁↑` as the first `Value::Native` (host-provided capability,
 //    runtime never touches `std::io` itself — see `obfusku_cli::natives`
 //    and `obfusku_runtime::value::NativeFn`'s own doc comments). ───────
 
 #[test]
 fn print_writes_to_real_stdout_through_the_compiled_binary() {
-    let f = write_temp("result \u{2254} print(\u{22}hello from native print\u{22})\n\u{2767}\n");
+    let f = write_temp("result \u{2254} ⌁↑(\u{22}hello from native ⌁↑\u{22})\n\u{2767}\n");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("hello from native print"), "{stdout}");
-    // print : Str -> Unit
+    assert!(stdout.contains("hello from native ⌁↑"), "{stdout}");
+    // ⌁↑ : Str -> Unit
     assert!(stdout.contains("Unit"), "{stdout}");
 }
 
 #[test]
 fn print_composes_with_an_ordinary_function_and_stdlib_map() {
-    // print called from inside a user-defined function, and from a
-    // stdlib `map` callback — proves a native value is an ordinary
+    // ⌁↑ called from inside a user-defined function, and from a
+    // stdlib `\u{27D0}` callback — proves a native value is an ordinary
     // first-class function at every call site, not special-cased.
     let f = write_temp(
-        "\u{3bb}announce(n: \u{27c1}): \u{2205} \u{2192} print(\u{22}got a number\u{22})\n\
-         xs \u{2254} Cons(1, Cons(2, Nil))\n\
-         result \u{2254} map(announce, xs)\n\u{2767}\n",
+        "\u{3bb}announce(n: \u{27c1}): \u{2205} \u{2192} ⌁↑(\u{22}got a number\u{22})\n\
+         xs \u{2254} \u{205D}(1, \u{205D}(2, \u{2298}))\n\
+         result \u{2254} \u{27D0}(announce, xs)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
     assert!(out.status.success(), "{:?}", out);
@@ -1683,7 +1916,7 @@ fn print_composes_with_an_ordinary_function_and_stdlib_map() {
 
 #[test]
 fn calling_print_with_a_non_str_argument_is_a_static_type_error_not_a_runtime_crash() {
-    let f = write_temp("result \u{2254} print(5)\n\u{2767}\n");
+    let f = write_temp("result \u{2254} ⌁↑(5)\n\u{2767}\n");
     let out = bin().arg("check").arg(f.path()).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8(out.stderr).unwrap();
@@ -1692,7 +1925,7 @@ fn calling_print_with_a_non_str_argument_is_a_static_type_error_not_a_runtime_cr
 
 #[test]
 fn a_local_binding_reusing_the_print_name_is_a_static_error() {
-    let f = write_temp("print \u{2254} 5\nresult \u{2254} print\n\u{2767}\n");
+    let f = write_temp("⌁↑ \u{2254} 5\nresult \u{2254} ⌁↑\n\u{2767}\n");
     let out = bin().arg("check").arg(f.path()).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8(out.stderr).unwrap();

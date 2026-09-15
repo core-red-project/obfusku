@@ -16,6 +16,7 @@ obfusku-typecheck = { path = "../obfusku-typecheck" }
 obfusku-syntax = { path = "../obfusku-syntax" }
 obfusku-runtime = { path = "../obfusku-runtime" }
 obfusku-fmt = { path = "../obfusku-fmt" }
+toml = { version = "0.8", default-features = false, features = ["parse"] }
 
 [lints]
 workspace = true

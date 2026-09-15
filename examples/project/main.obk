@@ -1,0 +1,18 @@
+// ═══════════════════════════════════════════════════════════════
+// Obfusku Project: a canonical multi-directory Project.
+// Demonstrates: obfusku.toml manifest discovery, project-relative
+// module resolution (utils/strings.obk is NOT in main.obk's own
+// directory — same-directory-only resolution could never reach it),
+// and the Project-root filesystem boundary.
+//
+// Try: obfusku run examples/project
+//      obfusku build examples/project
+// ═══════════════════════════════════════════════════════════════
+
+⟲ strings
+
+logged ≔ ⌁↑(greeting)
+note ≔ ⌁↓⌬("note.txt")
+
+result ≔ greeting
+❧

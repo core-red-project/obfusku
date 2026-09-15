@@ -1,0 +1,27 @@
+// ═══════════════════════════════════════════════════════════════
+// Array<T> in Obfusku
+// Demonstrates: the fixed-arity, O(1)-access Array combinator surface
+// — ⊡ (map), ⊟ (filter), ⊞ (fold), # (length), ⊙ (persistent set).
+// ═══════════════════════════════════════════════════════════════
+
+nums ≔ [10, 20, 30, 40]
+
+// ⊡ — transform every element
+doubled ≔ ⊡(λ(n: ⟁) → n ✱ 2)(nums)
+
+// ⊟ — keep only matching elements
+overTwenty ≔ ⊟(λ(n: ⟁) → n > 20)(nums)
+
+// ⊞ — combine to one value
+total ≔ ⊞(λ(acc: ⟁) → λ(n: ⟁) → acc ✚ n)(0)(nums)
+
+// # — element count
+count ≔ #(nums)
+
+// ⊙ — persistent update; nums itself is untouched
+replaced ≔ ⊙(nums)(0)(99)
+firstStillOriginal ≔ nums[0]
+firstReplaced ≔ replaced[0]
+
+result ≔ total ✚ count
+❧

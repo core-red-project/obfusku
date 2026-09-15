@@ -8,7 +8,7 @@
 //! here, not just `⟳`-exported ones (there is no other module to keep
 //! anything private from).
 //!
-//! `List<T>` and its `map`/`filter`/`fold` combinators are the only
+//! `List<T>` and its `⟐`/`⌿`/`⌽` (map/filter/fold) combinators are the only
 //! contents so far (§15/§20's "most of stdlib is Obfusku source, only
 //! I/O needs a native hook" — I/O stays fully out of scope here).
 //! I/O, `run_source`/`check_source` (REPL), and `Array<T>` combinators
@@ -74,11 +74,11 @@ pub fn load(
         values.insert(name, value);
     }
 
-    // `List<T>`'s own `TypeDeclaration` — needed so a user program can
-    // pattern-match against `Nil`/`Cons` (previously only their
-    // constructor *functions* crossed into the ambient environment; see
-    // `obfusku_typecheck::check_with_prelude_and_types`'s own doc
-    // comment for why this was a real, previously-undiscovered gap).
+    // Every stdlib `TypeDeclaration` (`List`, `Optional`, `Result`, …) —
+    // a constructor's `VariantInfo` must be in scope for a user program
+    // to pattern-match against `⊘`/`⁝`/etc., not just call them as
+    // ordinary functions (see `check_with_prelude_and_types`'s own doc
+    // comment on why the value-level prelude alone isn't enough).
     let type_decls = core_module.type_decls.clone();
 
     Ok((types, values, type_decls))

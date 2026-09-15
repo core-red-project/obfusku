@@ -27,12 +27,14 @@ Expected to go stale; re-run periodically. Decision rationale lives in
 - ADTs / constructors as ordinary functions — → `spec/SEMANTIC_CORE.md` §9
 - Match/Pattern, full exhaustiveness (incl. record patterns) — → `spec/SEMANTIC_CORE.md` §10, §17
 - Value restriction / letrec-group-aware generalization — → `spec/SEMANTIC_CORE.md` §19.1
-- `Optional`/`Result` as ordinary user ADTs — → `spec/SEMANTIC_CORE.md` §9
+- `Optional<T>`/`Result<T,E>` as canon ambient ADTs (`⦰`/`⧫`, `✓`/`✗`) — → `spec/GLYPH_SYSTEM_DESIGN.md` §10.3, §10.4
 - `Raise`/`Catch`, dynamic-extent resolution, built-in closed `Exception` ADT — → `spec/SEMANTIC_CORE.md` §15, §15.1, §15.2, §15.3 · `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §7.8 · `spec/adr/ADR-015-exception-closed-adt-and-catch-semantics.md`
 - Arithmetic/comparison/equality/logical primitives, closed-table typing, total equality — → `spec/SEMANTIC_CORE.md` §18, §20.2
 - Generic top-level function / local-`LetRec` signatures — → `spec/SEMANTIC_CORE.md` §19
-- `List<T>` (incl. ambient-stdlib pattern matching) — → `spec/SEMANTIC_CORE.md` §9.1
-- `Array<T>` (`ArrayLiteral`/`IndexExpr`), bracket syntax — → `spec/SEMANTIC_CORE.md` §9.1, §9.2 · `spec/adr/ADR-002-array-bracket-syntax.md`
+- `List<T>` (`⊘`/`⁝`, ambient-stdlib pattern matching, `⟐`/`⌿`/`⌽` combinators) — → `spec/SEMANTIC_CORE.md` §9.1 · `spec/GLYPH_SYSTEM_DESIGN.md` §10.3
+- `Array<T>` (`ArrayLiteral`/`IndexExpr`, bracket syntax, `⊡`/`⊟`/`⊞`/`#`/`⊙` combinators as pure natives) — → `spec/SEMANTIC_CORE.md` §9.1, §9.2 · `spec/GLYPH_SYSTEM_DESIGN.md` §10.5 · `spec/adr/ADR-002-array-bracket-syntax.md` · `spec/adr/ADR-021-array-combinators-are-pure-natives.md`
+- Explicit `Int↔Real` conversion (`↗`/`↘`) — → `spec/SEMANTIC_CORE.md` §20.3 · `spec/GLYPH_SYSTEM_DESIGN.md` §10.6
+- Relational operators fully symbolic (`≡`/`≠`/`≤`/`≥`, `<`/`>` kept as their own roots) — → `spec/GLYPH_SYSTEM_DESIGN.md` §8.1 · `spec/adr/ADR-016-relational-operators-are-symbolic.md`
 - `run`'s reported value — → `spec/adr/ADR-004-runresult-contract.md`
 - Typechecker parameter-type propagation and cross-`Checker` scheme identity — → `spec/adr/ADR-001-typechecker-parameter-propagation-and-scheme-identity.md`
 - Generic ADT arity checking — → `spec/adr/ADR-003-generic-adt-arity-checking.md`
@@ -53,6 +55,8 @@ Expected to go stale; re-run periodically. Decision rationale lives in
 - NFC source normalization enforcement — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §2
 - Glyph purity (no ASCII operator aliases) — → `spec/GLYPH_SYSTEM_DESIGN.md` §1 · `spec/adr/ADR-014-glyph-purity.md`
 - No general loop construct, no `return`/early-exit form (by design) — → `spec/GLYPH_SYSTEM_DESIGN.md` §7.2
+- Obfusku Project model: `obfusku.toml` marker, nearest-ancestor discovery, bare-file fallback preserved — → `spec/adr/ADR-017-obfusku-project-model.md` · `spec/adr/ADR-020-obfusku-project-manifest.md`
+- Project-relative module resolution (whole-tree search by basename, ambiguity is a static error) — → `spec/adr/ADR-018-project-relative-module-resolution.md`
 
 ### Type system
 - Hindley-Milner inference, unification, occurs check — → `spec/SEMANTIC_CORE.md` §3, §19
@@ -65,36 +69,40 @@ Expected to go stale; re-run periodically. Decision rationale lives in
 
 ### Runtime
 - Tree-walking evaluator, TCO trampoline (stack-safe to ~100k) — → `spec/SEMANTIC_CORE.md` §14.1
+- `eval::apply_value` — host-native → Obfusku-callback plumbing, scoped to `Array` combinators, non-trampolined, no new language primitive — → `spec/adr/ADR-021-array-combinators-are-pure-natives.md`
 - Values: Int/Real/Str/Bool/Unit/Closure/Cell/Adt/List/Array — → `spec/SEMANTIC_CORE.md` §2, §9.1, §9.2
-- `print`/`readLine` (ambient I/O, host boundary contract) — → `spec/SEMANTIC_CORE.md` §15.4 · `spec/adr/ADR-010-io-host-boundary.md`
+- `⌁↑`/`⌁↓`/`⌁↓⌬`/`⌁↑⌬` (ambient I/O, Project-root filesystem boundary, symlink-escape rejection) — → `spec/SEMANTIC_CORE.md` §15.4 · `spec/adr/ADR-010-io-host-boundary.md` · `spec/adr/ADR-019-project-root-filesystem-boundary.md`
 - Unit value literal in expression position — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §5
-- Standard library as ambient prelude (`List<T>`/`map`/`filter`/`fold`) — → `spec/adr/ADR-012-ambient-stdlib.md`
+- Standard library as ambient prelude (`List<T>`/`Optional<T>`/`Result<T,E>`/`⟐`/`⌿`/`⌽`, plus pure `Array`/numeric-conversion natives) — → `spec/adr/ADR-012-ambient-stdlib.md` · `spec/IMPLEMENTATION_ARCHITECTURE.md` §15
 
 ### Diagnostics
 - Span/SourceMap, spans preserved parse→desugar→typecheck→runtime — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §14
 - Line/column resolution for rendering — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §14
 
 ### Toolchain
-- `run`/`check` pipeline as a library — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §12
-- CLI dispatch (`run`/`check`/`fmt`/`repl`/`inspect`/`version`) — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §12
-- REPL: per-line incremental evaluation, ambient stdlib + I/O, no effect replay — → `spec/adr/ADR-013-repl-incremental-evaluation.md`
+- `run`/`check`/`build` pipelines as a library — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §12
+- CLI dispatch (`run`/`check`/`fmt`/`repl`/`inspect`/`build`/`version`), file-or-Project-directory arguments — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §12 · `spec/adr/ADR-017-obfusku-project-model.md`
+- `build`: requires a real Project, validates the whole reachable import graph, certifies a Source Artifact, writes nothing to disk — → `spec/LANGUAGE_SPEC.md` §5
+- REPL: per-line incremental evaluation, ambient stdlib + I/O + pure natives, no effect replay — → `spec/adr/ADR-013-repl-incremental-evaluation.md`
 - Formatter: surface-AST, pre-desugar, behavior-preserving round-trip — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §13 · `spec/adr/ADR-009-formatter-architecture.md`
 
 ---
 
 ## Pending
 
-- **Filesystem access (`readFile`/`writeFile`) — signatures specified, host wiring not yet built, entry-directory scoping policy blocked on the module/artifact model.** → `spec/SEMANTIC_CORE.md` §15.4 · `spec/adr/ADR-011-filesystem-scoping.md` · `spec/LANGUAGE_SPEC.md` §5
+Nothing currently pending — the previous entry here (`readFile`/`writeFile` host wiring, blocked on the module/artifact model) is resolved: both are implemented, and the Project model that was blocking their scoping policy is `ADR-017`/`ADR-019`.
 
 ## Deferred (intentional)
 
-- Module/artifact/distribution model (packaging, versioning, search paths beyond the entry directory) — → `spec/LANGUAGE_SPEC.md` §5
-- Standard library contents/naming beyond `List`/`map`/`filter`/`fold` — → `spec/LANGUAGE_SPEC.md` §5
+- `test` command — needs a language-level testing construct that does not exist; not invented as a CLI-level naming convention — → `spec/LANGUAGE_SPEC.md` §5
+- Packaging/archive format for a distributed Source Artifact, external-Project dependency resolution, manifest metadata beyond `format`/`entry`/`name` — → `spec/adr/ADR-017-obfusku-project-model.md` · `spec/adr/ADR-020-obfusku-project-manifest.md`
+- `Real` literal internationalization (locale-variant decimal separator) — closed, deferred by design, not debt: `,` is already the structural list separator, so a decimal comma would make `f(1,5)` genuinely ambiguous — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §20
+- Standard-library crate extraction (`stdlib.obk`/native modules currently live in `crates/obfusku-cli`) — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §15, §20
 - LSP / editor tooling — never scoped in `spec/`
-- `Array<T>` combinators (`map`/`filter`/`get`/`set`/`length`) — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §7.9 · `spec/SEMANTIC_CORE.md` §9.2
 - Selective/aliased imports, re-exporting an imported name — → `spec/adr/ADR-006-whole-module-imports.md`
 - Formatter comment/trivia preservation — → `spec/adr/ADR-009-formatter-architecture.md`
 - REPL filesystem natives — no single entry file to scope against — → `spec/adr/ADR-013-repl-incremental-evaluation.md`
+- Any further canon stdlib type (a second collection, more conversions) — future library-content decisions, not gaps in what's already named
 
 ## Future / evaluated and declined
 

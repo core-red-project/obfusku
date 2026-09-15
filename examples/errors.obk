@@ -7,7 +7,7 @@
 // 4. Catching runtime arithmetic exceptions such as DivisionByZero.
 
 // Safe integer division with explicit raise
-λsafeDivide(numerator: ⟁, denominator: ⟁): ⟁ → ⟡ denominator == 0 {
+λsafeDivide(numerator: ⟁, denominator: ⟁): ⟁ → ⟡ denominator ≡ 0 {
   ◉ → ☄ DivisionByZero
   ⟢ ◎ → numerator ÷ denominator
 }

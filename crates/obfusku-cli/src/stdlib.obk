@@ -1,18 +1,20 @@
-List t ≔ { Nil ⟢ Cons(t, List ▷ t) }
+List t ≔ { ⊘ ⟢ ⁝(t, List ▷ t) }
+Optional t ≔ { ⦰ ⟢ ⧫(t) }
+Result t e ≔ { ✓(t) ⟢ ✗(e) }
 
-λmap(f: t → u, xs: List ▷ t): List ▷ u → ⟡ xs {
-  Nil → Nil
-  ⟢ Cons(h, tl) → Cons(f(h), map(f, tl))
+λ⟐(f: t → u, xs: List ▷ t): List ▷ u → ⟡ xs {
+  ⊘ → ⊘
+  ⟢ ⁝(h, tl) → ⁝(f(h), ⟐(f, tl))
 }
-λfilter(f: t → ○, xs: List ▷ t): List ▷ t → ⟡ xs {
-  Nil → Nil
-  ⟢ Cons(h, tl) → ⟡ f(h) {
-    ◉ → Cons(h, filter(f, tl))
-    ⟢ ◎ → filter(f, tl)
+λ⌿(f: t → ○, xs: List ▷ t): List ▷ t → ⟡ xs {
+  ⊘ → ⊘
+  ⟢ ⁝(h, tl) → ⟡ f(h) {
+    ◉ → ⁝(h, ⌿(f, tl))
+    ⟢ ◎ → ⌿(f, tl)
   }
 }
-λfold(f: u → t → u, acc: u, xs: List ▷ t): u → ⟡ xs {
-  Nil → acc
-  ⟢ Cons(h, tl) → fold(f, f(acc, h), tl)
+λ⌽(f: u → t → u, acc: u, xs: List ▷ t): u → ⟡ xs {
+  ⊘ → acc
+  ⟢ ⁝(h, tl) → ⌽(f, f(acc, h), tl)
 }
 ❧

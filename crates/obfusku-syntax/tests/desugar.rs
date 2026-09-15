@@ -863,10 +863,10 @@ fn every_non_short_circuit_binop_lowers_to_the_matching_core_op() {
         ("1 ⌗ 2", CoreBinOp::Mod),
         ("1 < 2", CoreBinOp::Lt),
         ("1 > 2", CoreBinOp::Gt),
-        ("1 <= 2", CoreBinOp::Le),
-        ("1 >= 2", CoreBinOp::Ge),
-        ("1 == 2", CoreBinOp::Eq),
-        ("1 != 2", CoreBinOp::NotEq),
+        ("1 \u{2264} 2", CoreBinOp::Le),
+        ("1 \u{2265} 2", CoreBinOp::Ge),
+        ("1 \u{2261} 2", CoreBinOp::Eq),
+        ("1 \u{2260} 2", CoreBinOp::NotEq),
         ("◉ ⊻ ◎", CoreBinOp::Xor),
     ];
     for (src, expected) in cases {

@@ -1,31 +1,26 @@
 // ═══════════════════════════════════════════════════════════════
 // Generics and Polymorphism in Obfusku
-// Demonstrates: Generic functions, generic ADTs, and Hindley-Milner type inference
+// Demonstrates: Generic functions, the ambient Optional<T>, and
+// Hindley-Milner type inference
 // ═══════════════════════════════════════════════════════════════
 
 // Generic identity function reusing type parameter 't'
 λidentity(x: t): t → x
 
-// Generic Optional ADT with type parameter 't'
-Option t ≔ {
-    Some(t)
-    ⟢ None
-}
-
-// Function unwrapping an Option<Int> with a fallback default
-λunwrapOr(opt: Option ▷ ⟁, fallback: ⟁): ⟁ →
+// Function unwrapping an ambient Optional<Int> with a fallback default
+λunwrapOr(opt: Optional ▷ ⟁, fallback: ⟁): ⟁ →
     ⟡ opt {
-        Some(v) → v
-        ⟢ None → fallback
+        ⧫(v) → v
+        ⟢ ⦰ → fallback
     }
 
 // Polymorphic identity instantiated at multiple types
 idInt ≔ identity(42)
 idStr ≔ identity("polymorphic")
 
-// Generic constructor instances
-optInt ≔ Some(100)
-optEmpty ≔ None
+// Ambient Optional constructor instances
+optInt ≔ ⧫(100)
+optEmpty ≔ ⦰
 
 // Unwrapping options
 res1 ≔ unwrapOr(optInt, 0)

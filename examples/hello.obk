@@ -7,7 +7,7 @@
 greeting ≔ "Hello, World!"
 
 // Invoke native print capability
-printed ≔ print(greeting)
+printed ≔ ⌁↑(greeting)
 
 // Reported value of the program
 result ≔ greeting

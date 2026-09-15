@@ -14,7 +14,7 @@ pub use infer::instantiate_core_type;
 use infer::{Checker, TypeEnv};
 use obfusku_core::ast::{BindingGroup, Module, TypeDecl};
 use obfusku_diagnostics::{Diagnostic, Severity, Span};
-pub use types::{Scheme, Type};
+pub use types::{Scheme, Type, TypeVarId};
 
 /// The type scheme of every name available in the ambient environment
 /// (from stdlib, natives, or imported modules) — seeded into a fresh
@@ -92,8 +92,8 @@ pub fn check_with_prelude(
 /// written in *this* module against an imported ADT's constructors can
 /// actually resolve them. Without this, only the ordinary value-level
 /// `Prelude` (constructor *functions*, as plain `Scheme`s) crosses a
-/// module boundary — a real, previously-undiscovered gap: an imported
-/// constructor could always be *called* (`Circle(2.0)`, an ordinary
+/// module boundary: an imported constructor could always be *called*
+/// (`Circle(2.0)`, an ordinary
 /// `Apply` against an already-resolved `Scheme`), but never *matched
 /// against* (`⟡ s { Circle(r) → ... }`), since `Pattern::Constructor`
 /// and `Expr::Constructor` both resolve a tag through this `Checker`'s

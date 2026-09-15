@@ -248,10 +248,14 @@ grammar.
 ```
 BinaryExpression ::= Expression BinOp Expression
 UnaryExpression   ::= UnOp Expression
-BinOp ::= "∨" | "⊻" | "∧" | "==" | "!=" | "<" | ">" | "<=" | ">="
+BinOp ::= "∨" | "⊻" | "∧" | "≡" | "≠" | "<" | ">" | "≤" | "≥"
         | "✚" | "☠︎" | "✱" | "÷" | "⌗"
 UnOp   ::= "¬" | "−"
 ```
+Per ADR-016, `≡`/`≠`/`≤`/`≥` replace the earlier `==`/`!=`/`<=`/`>=`
+ASCII digraphs; `<`/`>` are unchanged, kept as the relational family's
+own roots rather than retired (`GLYPH_SYSTEM_DESIGN.md` §8.1).
+
 Precedence and associativity for these are stated in full in §13, not
 here — kept as one authoritative table rather than split prose, per the
 standing instruction not to hand-wave this.
@@ -259,7 +263,7 @@ standing instruction not to hand-wave this.
 **Typing, Core representation, and evaluation semantics for all of
 these are resolved in `SEMANTIC_CORE.md` §20.2** (closed operand-type
 dispatch table, no coercion, `∧`/`∨` short-circuit via `Match`-desugaring,
-`⌗`'s truncating semantics, `==`/`!=`'s same-type-only restriction per
+`⌗`'s truncating semantics, `≡`/`≠`'s same-type-only restriction per
 §18) — this section only ever committed to the lexical/precedence
 grammar, and §20.2 is what makes these implementable.
 
@@ -451,11 +455,14 @@ IndexExpr         ::= Expression "[" Expression "]"
   for every value in the language. A genuinely mutable array, if ever
   needed, is `Cell<Array<T>>` — no new Core mechanism, the same
   composition any other `Cell<T>` already supports.
-- **Combinators (`map`/`filter`/`fold`/`get`/`set`/`length`/…) are
-  explicitly out of this grammar's scope.** They are ordinary functions
-  operating on `Array` values via ordinary `Application` — ordinary
-  library surface, not new syntax — deliberately deferred to a
-  stdlib/intrinsics slice, not decided here.
+- **Combinators are ordinary functions, not new syntax — out of this
+  grammar's scope by category, not by absence of a decision.** They
+  operate on `Array` values via ordinary `Application`, resolved in
+  `GLYPH_SYSTEM_DESIGN.md` §10.5 and implemented as host natives
+  (`crates/obfusku-cli/src/array_native.rs`, `ADR-021`): `⊡`/`⊟`/`⊞`
+  (map/filter/fold) and `#`/`⊙` (length/persistent set). `get` is
+  deliberately not among them — `IndexExpr` (`arr[i]`) already is read
+  access.
 
 ---
 
@@ -785,8 +792,8 @@ full, **highest binding (tightest) to lowest**:
 | 2 | Unary `¬`, unary `−` (negation) | right-to-left (prefix) |
 | 3 | `✱`, `÷`, `⌗` (multiply, divide, modulo) | left-to-right |
 | 4 | `✚`, `☠︎` (add, subtract) | left-to-right |
-| 5 | `<`, `>`, `<=`, `>=` (comparison) | non-associative — chaining (`a < b < c`) is a syntax error, not sugar for `a<b ∧ b<c` |
-| 6 | `==`, `!=` (equality) | non-associative, same reasoning |
+| 5 | `<`, `>`, `≤`, `≥` (comparison) | non-associative — chaining (`a < b < c`) is a syntax error, not sugar for `a<b ∧ b<c` |
+| 6 | `≡`, `≠` (equality) | non-associative, same reasoning |
 | 7 | `∧` (logical and) | left-to-right |
 | 8 | `⊻` (logical xor) | left-to-right |
 | 9 (loosest) | `∨` (logical or) | left-to-right |
@@ -1013,21 +1020,44 @@ counter ≔˚ 0
 
 ## 20. Known remaining questions
 
-1. **Exact codepoints, not roles, for two new marks**: the mutability
-   modifier (illustrated as `˚`) and the argument-hole mark (illustrated
-   as `•`) have settled *roles* and *weight requirements* (§1 of the
-   glyph document) but not final Unicode codepoints — that needs
-   font/rendering testing across common monospace terminal fonts, out of
-   scope for a language-design document.
-2. **Short standard names for generic wrapper types** (`Array`,
-   `Optional`, `Result`, `Cell`, `List`, `Exception`) — `GLYPH_SYSTEM_
-   DESIGN.md` §6.2 established these are ordinary spelled names, not
-   sigils, but the standard library's exact naming convention (full
-   words vs. abbreviations) is a library-design question, not a grammar
-   one, and is left open here.
-3. **`Real` literal internationalization** (decimal comma vs. period) is
-   not addressed — out of scope for this pass, flagged rather than
-   silently defaulted.
+1. **Exact codepoints for two new marks — resolved.** The mutability
+   modifier is `˚` (U+02DA MODIFIER LETTER RING ABOVE) and the
+   argument-hole mark is `•` (U+2022 BULLET), both fixed in
+   `obfusku-syntax`'s lexer (`TokenKind::Mut`/`TokenKind::Hole`) and
+   exercised throughout the test suite. Recorded here as closed rather
+   than removed, so a reader tracing this document's own history sees
+   where the open question was settled rather than finding it silently
+   gone.
+2. **Short standard names for generic wrapper types — resolved.**
+   `List` and `Optional` are implemented in
+   `crates/obfusku-cli/src/stdlib.obk` under their full spelled names
+   (per `GLYPH_SYSTEM_DESIGN.md` §6.2's "ordinary spelled names, not
+   sigils" finding), with symbolic constructors (`⊘`/`⁝`, `⦰`/`⧫` —
+   §10.2/§10.3 of that document). `Result` is implemented the same way
+   (`✓`/`✗`, §10.4). `Array`'s own type needed no wrapper-name decision
+   at all — it is a Core primitive (§9.2), not a library ADT — and its
+   combinator surface is resolved separately (§10.5). `Cell` needed no
+   wrapper-name decision either — it is a first-class `Type::Cell`
+   variant, not an `AdtRegistry` entry. No generic wrapper type in the
+   canon stdlib has an undecided name.
+3. **`Real` literal internationalization — closed, deferred by design,
+   not technical debt.** `.` remains the sole, canonical decimal
+   separator; `,` remains reserved as the generic structural list
+   separator (§6: `Application` arguments, `ArrayLiteral` elements,
+   `Constructor`/`TypeBody` fields — one mechanism, reused everywhere,
+   per `GLYPH_SYSTEM_DESIGN.md` §3). A locale-variant decimal comma
+   (`1,5`) was evaluated and rejected: `,` already carries this
+   structural role throughout the grammar, so admitting it as a decimal
+   separator too would make `f(1,5)` genuinely ambiguous between a
+   two-argument call and a one-argument call with a `Real` literal —
+   the same class of ambiguity `ADR-002` already rejected for
+   `ArrayLiteral` vs. `TupleBody`, not a new one invented for this
+   item. The inverted convention (`.` as thousands separator, `,` as
+   decimal — `1.000,50`) does not escape this: it still needs `,` for
+   the decimal position. No locale-dependent numeric syntax is
+   introduced in 1.0. This is a settled design position, not a task
+   awaiting future completion — there is nothing pending here to pick
+   back up.
 
 Nothing above blocks implementing a parser from this document as
 written; each is a follow-on detail, not an ambiguity in the grammar

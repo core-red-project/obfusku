@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════
 // Math Utility Module
 // Demonstrates: Module exports (⟳) and private helpers
+// (user-chosen names may be glyphs or ordinary words — both are legal)
 // ═══════════════════════════════════════════════════════════════
 
 // Private helper (not exported)
-λprivateOffset(n: ⟁): ⟁ → n ✚ 1
+λπrivateOffset(ν: ⟁): ⟁ → ν ✚ 1
 
 // Exported constant (≔⟳)
-multiplier ≔⟳ 10
+μ ≔⟳ 10
 
 // Exported function (→⟳)
 λscaleAndOffset(x: ⟁): ⟁ →⟳
-    (x ✱ multiplier) ▷ privateOffset
+    (x ✱ μ) ▷ πrivateOffset
 ❧

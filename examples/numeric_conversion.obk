@@ -1,0 +1,26 @@
+// ═══════════════════════════════════════════════════════════════
+// Explicit Numeric Conversion in Obfusku
+// Demonstrates: ↗ (Int → Real, total) and ↘ (Real → Int, partial —
+// truncates toward zero; raises on non-finite or out-of-range values).
+// ═══════════════════════════════════════════════════════════════
+
+count ≔ 5
+average ≔ ↗(count) ÷ 2.0
+
+price ≔ 19.99
+wholePart ≔ ↘(price)
+
+// ↘ truncates toward zero, not floor — -7, not -8.
+negative ≔ ↘(0.0 ☠︎ 7.9)
+
+// A caught conversion failure: 1.0 ÷ 0.0 is +Infinity, which ↘ rejects.
+guarded ≔ ☊ (↘(1.0 ÷ 0.0)) λ(e) → ⟡ e {
+    InvalidOperation(msg) → 0
+    ⟢ DivisionByZero → 0
+    ⟢ NonExhaustiveMatch → 0
+    ⟢ IntegerOverflow → −1
+    ⟢ Failure(tag, msg) → 0
+}
+
+result ≔ wholePart ✚ negative
+❧

@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // Multi-Module Program in Obfusku
 // Demonstrates: Whole-module imports (⟲) and calling exported functions
+// (user-chosen names may be glyphs or ordinary words — both are legal)
 // ═══════════════════════════════════════════════════════════════
 
 // Import mathutil module from the same directory
@@ -8,8 +9,8 @@
 
 // Invoke exported functions and constants
 scaled ≔ scaleAndOffset(5)
-base ≔ multiplier
+β ≔ μ
 
 // Combine results
-result ≔ scaled ✚ base
+result ≔ scaled ✚ β
 ❧

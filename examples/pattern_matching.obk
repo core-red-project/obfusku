@@ -1,11 +1,12 @@
 // ═══════════════════════════════════════════════════════════════
 // Pattern Matching in Obfusku
 // Demonstrates: Literal patterns, boolean patterns, and wildcards
+// (user-chosen names may be glyphs or ordinary words — both are legal)
 // ═══════════════════════════════════════════════════════════════
 
 // Integer pattern matching with wildcards
-λdescribeNumber(n: ⟁): ⌘ →
-    ⟡ n {
+λδescribe(ν: ⟁): ⌘ →
+    ⟡ ν {
         0 → "zero"
         ⟢ 1 → "one"
         ⟢ 2 → "two"
@@ -13,25 +14,25 @@
     }
 
 // Boolean pattern matching
-λbooleanToString(b: ○): ⌘ →
-    ⟡ b {
+λβoolToString(β: ○): ⌘ →
+    ⟡ β {
         ◉ → "true"
         ⟢ ◎ → "false"
     }
 
 // Nested pattern matching
-λclassify(n: ⟁): ⌘ →
-    ⟡ (n > 0) {
+λclassify(ν: ⟁): ⌘ →
+    ⟡ (ν > 0) {
         ◉ → "positive"
-        ⟢ ◎ → ⟡ (n < 0) {
+        ⟢ ◎ → ⟡ (ν < 0) {
             ◉ → "negative"
             ⟢ ◎ → "zero"
         }
     }
 
-zeroStr ≔ describeNumber(0)
-manyStr ≔ describeNumber(42)
-boolStr ≔ booleanToString(◉)
+zeroStr ≔ δescribe(0)
+manyStr ≔ δescribe(42)
+boolStr ≔ βoolToString(◉)
 classStr ≔ classify(0 ☠︎ 5)
 
 result ≔ classStr

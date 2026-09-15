@@ -61,6 +61,30 @@ impl<'a> Cur<'a> {
 /// genuine recursive call, which is what makes `Catch`'s TCO carve-out
 /// fall out for free: it needs its own frame to intercept a `Raised`
 /// unwinding through it, so its body is never a trampoline continuation.
+/// Applies an already-evaluated `Value` (a `Closure` or `Native`) to an
+/// already-evaluated argument — the same dispatch `Expr::Apply` performs
+/// below, factored out for a host-provided native (`ADR-021`) to invoke
+/// a caller-supplied function value without going through the Core AST
+/// at all. Deliberately not trampolined: a native calling this is never
+/// itself in tail position from the evaluator's point of view, and the
+/// combinators that need it (`Array`'s `map`/`filter`/`fold`) iterate in
+/// an ordinary Rust loop rather than recursing per element, so this
+/// costs one bounded Rust frame per call, not per collection size.
+pub fn apply_value(fv: Value, av: Value) -> EvalResult {
+    match fv {
+        Value::Closure(c) => {
+            let call_env = c.env.child();
+            call_env.bind(c.param.clone(), av);
+            eval(&c.body, &call_env)
+        }
+        Value::Native(f) => (f.func)(av),
+        other => Err(Raised(err_value(
+            Span::default(),
+            format!("attempted to call a non-function value: {other:?}"),
+        ))),
+    }
+}
+
 pub fn eval(expr: &Expr, env: &Env) -> EvalResult {
     let mut cur: Cur = Cur::Borrowed(expr);
     let mut cur_env: Env = env.clone();

@@ -86,7 +86,7 @@ fn right_associative_subtraction_round_trips() {
 
 #[test]
 fn comparison_and_equality_round_trip() {
-    assert_behavior_preserved("result \u{2254} (1 < 2) \u{2227} (2 == 2)\n\u{2767}\n");
+    assert_behavior_preserved("result \u{2254} (1 < 2) \u{2227} (2 \u{2261} 2)\n\u{2767}\n");
 }
 
 #[test]

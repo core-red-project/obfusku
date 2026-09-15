@@ -14,8 +14,15 @@ use crate::lexer::{Token, TokenKind};
 use obfusku_diagnostics::{Diagnostic, Severity, SourceId, Span};
 
 /// §4/§8.3's disambiguation: decidable from the first character alone.
+/// A canon constructor glyph (`⊘`, `⁝`, …; `GLYPH_SYSTEM_DESIGN.md`
+/// §10.3) has no case at all, so it is admitted as a Tag start the same
+/// way an uppercase letter is — explicitly, per glyph, rather than by
+/// any general "not a letter" rule, since combinator glyphs (`⟐`, `⌿`,
+/// `⌽`) are ordinary value-level names and must NOT be treated as Tags.
 fn starts_uppercase(name: &str) -> bool {
-    name.chars().next().is_some_and(|c| c.is_uppercase())
+    name.chars()
+        .next()
+        .is_some_and(|c| c.is_uppercase() || matches!(c, '⊘' | '⁝' | '⦰' | '⧫' | '✓' | '✗'))
 }
 
 /// The reserved-invalid combination `CONCRETE_SYMBOLIC_GRAMMAR.md`

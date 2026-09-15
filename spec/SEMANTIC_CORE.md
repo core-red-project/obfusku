@@ -679,23 +679,24 @@ follows IEEE-754 totality (`1.0 / 0.0 = Infinity`, `0.0 / 0.0 = NaN`,
 never a raise). Layering an exception in front of a domain that IEEE
 already made total would be an inconsistency, not a safety improvement.
 
-### 15.4 Ambient I/O — signatures and failure tags (resolved); provisioning and filesystem scope (deliberately not yet decided)
+### 15.4 Ambient I/O — signatures, failure tags, and filesystem scope, all resolved
 
 Obfusku's standard ambient environment — names available without any
-explicit `⟲` — includes four I/O operations. **This subsection fixes their
+explicit `⟲` — includes four I/O operations (named abstractly below as
+`print`/`readLine`/`readFile`/`writeFile`, per this document's own
+"zero concrete glyphs" status; their surface spelling is the host-effect
+family in `GLYPH_SYSTEM_DESIGN.md` §10.2). **This subsection fixes their
 observable contract: what a program author can rely on when calling them
-and when writing a `Catch` handler around them, once an implementation
-provides them.** As of this writing, `print` and `readLine` are
-implemented in `crates/`; `readFile` and `writeFile` are specified here
-but not yet wired (host wiring pending the filesystem scoping decision —
-see `LANGUAGE_SPEC.md` §5 and `spec/adr/ADR-011-filesystem-scoping.md`).
-This section specifies all four operations' contract normatively regardless
-of implementation status. It deliberately does not decide
-*whether every embedding of Obfusku must provide this environment*, or
-*what exactly a filesystem operation's capability boundary is defined
-relative to* — both questions depend on the module/artifact/distribution
-model `LANGUAGE_SPEC.md` §5 already names as undecided, and are left
-there rather than resolved by accident here.
+and when writing a `Catch` handler around them.** As of this writing, all
+four are implemented in `crates/obfusku-cli/src/natives.rs`. This section
+specifies all four operations' contract normatively, including the
+filesystem capability boundary: it is the Project root `ADR-017`
+defines (falling back to the entry file's own directory in bare-file
+mode), completed by `ADR-019` to also reject symlink escapes, not just
+lexical ones. *Whether every embedding of Obfusku must provide this
+environment at all* remains open — an embedding with no filesystem
+concept whatsoever (a sandboxed evaluator library, say) is free to omit
+`readFile`/`writeFile` the same way the REPL already omits them.
 
 **Signatures:**
 
@@ -706,6 +707,12 @@ readFile : Str → Str
 writeFile : Str → Str → Unit
 ```
 
+(These four names are this document's abstract labels for the four
+operations, per this document's own "zero concrete glyphs" status —
+their actual surface spelling is a Surface Syntax question, settled in
+`GLYPH_SYSTEM_DESIGN.md` §10.2 and `CONCRETE_SYMBOLIC_GRAMMAR.md`, not
+here.)
+
 `readLine`/`readFile`/`writeFile` reuse the exceptional channel exactly as
 §15.2 already establishes — no new `Exception` variant is introduced for
 any of them. A failure raises `Failure(tag, payload)` (§15.2's own
@@ -715,11 +722,10 @@ program author has no way to predict from `Failure`'s shape alone:
 
 - `"EOF"` — `readLine` found no more input to read.
 - `"PermissionDenied"` — the operation was refused because it crossed
-  some filesystem capability boundary. *What exactly that boundary is*
-  (an entry-file-relative root? something else entirely?) is the open
-  question this subsection defers, per its own opening paragraph — the
-  tag's meaning is "a boundary was crossed," independent of where the
-  boundary sits.
+  the filesystem capability boundary: the Project root (`ADR-017`), or
+  a symlink resolving outside it (`ADR-019`) — the tag's meaning is "a
+  boundary was crossed," fixed to that specific boundary now, not left
+  abstract.
 - `"IOError"` — any other I/O failure (the target doesn't exist, a disk
   error, and similarly-shaped conditions) — genuinely distinct from a
   boundary violation, not a catch-all merged with `"PermissionDenied"`.
@@ -732,15 +738,12 @@ implementation:**
   external input source supplies it, not part of this language's evaluation
   semantics (§14 fixes evaluation *order*; it says nothing about a native
   call's real-world duration, and this subsection doesn't extend it to).
-- The exact definition of `readFile`/`writeFile`'s filesystem capability
-  boundary (what "the root" is, whether absolute paths or `..` are
-  rejected, what a boundary even means for a program with no single
-  on-disk entry file) — coupled to the still-open module/artifact model.
 - Whether a given embedding of Obfusku is obligated to provide this
   entire standard environment, or may provide a partial or different
-  one — also coupled to that same open model, since answering it requires
-  first deciding what "an embedding of Obfusku" normatively is, which
-  `spec/` has not yet done anywhere.
+  one — this depends on what "an embedding of Obfusku" normatively is,
+  which `spec/` still has not defined anywhere; the Project/filesystem
+  model itself (`ADR-017`/`ADR-019`) is resolved and does not block
+  answering this, it simply hasn't been asked yet.
 
 ---
 
@@ -1019,8 +1022,7 @@ equality; extended here to arithmetic and comparison for the same
 reason: an operator silently picking a conversion is exactly the kind of
 accidental semantics this specification has repeatedly had to walk back
 elsewhere in this document). Mixed `Int`/`Real` arithmetic requires an
-explicit conversion function — not yet named or specified; a stdlib
-question, not an operator-typing one.
+explicit conversion function — specified in §20.3 below.
 
 **`⌗` (modulo) — truncating remainder, sign follows the dividend, raises
 on a zero divisor exactly like `÷` (§15.3's reasoning applies identically:
@@ -1041,6 +1043,45 @@ it — truncating matches `÷`'s own already-frozen "Int is machine-integer-
 shaped, no total answer past its natural range" framing (§15.3) more
 directly than floor-mod's more "mathematically regular but non-native"
 behavior would.
+
+## 20.3 Explicit numeric conversion — `Int ↔ Real`
+
+Two host-provided natives (`GLYPH_SYSTEM_DESIGN.md` §10.6 fixes their
+surface spelling; both are ordinary prelude values, arity-1, like any
+other native per `ADR-010`) — this section fixes their observable
+contract, named here abstractly per this document's "zero concrete
+glyphs" status.
+
+**`toReal : Int → Real` — total, never raises.** `Int` is a fixed-width
+`i64` (`ADR-008`); `Real` is IEEE-754 `f64`. Because `f64`'s mantissa
+cannot exactly represent every `i64` value, a sufficiently large
+magnitude (`|n| > 2^53`) converts to the *nearest representable* `Real`,
+not the exact value. **This is an intentional consequence of Obfusku's
+own numeric representation choices — `Int` fixed at 64 bits (`ADR-008`),
+with no arbitrary-precision domain to fall back to — not an accident
+inherited from whatever host language happens to implement the
+runtime.** It does not constitute an exceptional condition: no
+`Exception` variant is raised for it, ever.
+
+**`toInt : Real → Int` — partial, three-way disjoint contract, stated
+explicitly rather than left to whatever the runtime's implementation
+language does for out-of-range or non-finite casts:**
+
+| `Real` value | Result |
+|---|---|
+| Finite, magnitude within `i64`'s representable range | Truncated toward zero (the fractional part is discarded, not rounded) |
+| `NaN` or `±Infinity` | Raises `InvalidOperation(Str)` (§15.2) — not a new variant; this is exactly the "operation with no meaningful arithmetic result" role `InvalidOperation` already plays elsewhere |
+| Finite, but outside `i64`'s representable range | Raises `IntegerOverflow` (§15.2, `ADR-008`) — not a new variant; the same condition `ADR-008` already names for any arithmetic result outside `Int`'s range, a conversion result included |
+
+`Exception`'s closed variant set (`ADR-015`) is unchanged by this
+section — both failure modes reuse existing variants under their
+already-stated meaning, not a new one minted for conversion
+specifically. An implementation must test these three cases against
+this table directly rather than delegating to whatever a host-language
+numeric cast happens to do at its own edge cases (e.g. Rust's `as`
+between float and integer types has its own historical edge-case
+history) — the *contract* is this table, not a particular cast
+instruction's behavior.
 
 ---
 

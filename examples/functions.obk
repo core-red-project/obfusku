@@ -1,32 +1,33 @@
 // ═══════════════════════════════════════════════════════════════
 // Functions and Currying in Obfusku
 // Demonstrates: Function declarations, lambdas, currying, and pipelines
+// (user-chosen names may be glyphs or ordinary words — both are legal)
 // ═══════════════════════════════════════════════════════════════
 
 // Named function declaration with explicit parameter and return types
-λsquare(n: ⟁): ⟁ → n ✱ n
+λσ(n: ⟁): ⟁ → n ✱ n
 
 // Two-argument curried function
 λadd(a: ⟁, b: ⟁): ⟁ → a ✚ b
 
 // Anonymous lambda with annotated parameter type
-increment ≔ λ(x: ⟁) → x ✚ 1
+δ ≔ λ(x: ⟁) → x ✚ 1
 
 // Higher-order function taking a function as an argument
-λapplyTwice(f: (⟁ → ⟁), x: ⟁): ⟁ → f(f(x))
+λτwice(f: (⟁ → ⟁), x: ⟁): ⟁ → f(f(x))
 
 // Standard application
-sq7 ≔ square(7)
+sq7 ≔ σ(7)
 
 // Curried application (partial application)
 addTen ≔ add(10)
 sum30 ≔ addTen(20)
 
 // Application through pipeline operator (▷)
-pipelineResult ≔ 5 ▷ square ▷ increment
+pipelineResult ≔ 5 ▷ σ ▷ δ
 
 // Higher-order function invocation
-quadrupleInc ≔ applyTwice(increment, 10)
+quadrupleInc ≔ τwice(δ, 10)
 
 result ≔ pipelineResult ✚ sum30
 ❧

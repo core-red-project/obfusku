@@ -143,10 +143,14 @@ compilation-isolation fact, not a label:**
   crate.** Nothing outside `obfusku-syntax` and `obfusku-fmt` needs
   surface AST without also needing the parser that produces it — unlike
   Core AST (§6), which genuinely has independent consumers.
-- **No standalone `obfusku-stdlib` crate yet** — `spec/LANGUAGE_SPEC.md`
-  §5 states stdlib content is undecided; inventing a crate boundary for
-  an undesigned thing would be a premature commitment. Noted as deferred
-  in §15 and §20, not solved here.
+- **No standalone `obfusku-stdlib` crate.** Stdlib content itself is now
+  substantially decided and implemented (`List`, `Optional`, `Result`,
+  `Array`'s combinators, numeric conversion — `spec/LANGUAGE_SPEC.md`
+  §5) inside `crates/obfusku-cli` (`stdlib.obk`, `array_native.rs`,
+  `numeric_native.rs`). Extracting a dedicated crate remains a genuinely
+  open, separate question (§20) — content being decided doesn't by
+  itself justify a new crate boundary until something actually needs
+  to depend on the stdlib without depending on the whole CLI.
 
 ---
 
@@ -343,9 +347,10 @@ Pure orchestration and presentation — no language logic of its own.
 | `run` | `syntax::parse_and_desugar` → `typecheck::check` → `runtime::evaluate` → print. The printed value currently uses Rust's derived `Debug` representation of `runtime::Value`; this is an implementation convention, not a stable display format or a compatibility contract. |
 | `check` | `syntax::parse_and_desugar` → `typecheck::check` → report diagnostics, no execution |
 | `fmt` | `syntax::parse` (surface only, desugaring not needed) → `fmt::format` |
-| `repl` | **settled by deviation from an earlier plan, not built as originally sketched here (§20 item 4)**: rather than a persistent `runtime::Environment` behind a new incremental-evaluation entry point, each accepted line is appended to a growing buffer, invisibly sealed, and the whole buffer is re-run from scratch through the same whole-module `syntax::parse_and_desugar` → `typecheck::check` → `runtime::evaluate` pipeline every other command already uses — a line that fails to parse/type-check is reported and dropped without being committed, so one bad line can't corrupt the session. No incremental API was added to `obfusku-runtime` or `obfusku-typecheck`. **Current limitation, a direct consequence of that same deviation, not a separate decision**: the REPL does not currently provide the ambient stdlib/I/O-native environment `run`/`check` seed via `stdlib::load`/`natives::load` (§15). Evaluation is eager (§14), and this pipeline re-evaluates the *entire* accumulated buffer on every submission — a native with an observable effect (`print`, `readLine`, `writeFile`, …) bound into a previously-committed line would therefore re-fire that effect on every later submission, not just once. Stdlib's own combinators are pure, so re-evaluating them is harmless and their absence here is a separate, unrelated scoping choice (§15); I/O natives are not, and providing them under the current whole-buffer-rerun model would be observably wrong, not merely untested. This is a statement about the current pipeline, not a permanent guarantee that the REPL will never have I/O — an evaluation model that avoids replaying committed effects would resolve it, and is unbuilt future work, not a defect in what's shipped now. Like `run`, its printed value uses `Value`'s derived `Debug` representation — an implementation convention, not a stable display format. |
+| `repl` | **`ReplSession` (`obfusku-cli::lib`): incremental, not whole-buffer-rerun.** An earlier design appended each accepted line to a growing buffer and re-ran the entire buffer from scratch on every submission — that approach was replaced, not merely amended: each submitted line is now parsed/type-checked/evaluated exactly once against an accumulated `type_prelude`/`value_prelude`/`type_decls` environment carried on the session, so a line's declarations become available to later lines without ever replaying its own evaluation. A line that fails to parse/type-check is reported and dropped without being committed, so one bad line can't corrupt the session. The session is seeded from the same `stdlib::load`/`natives::load_io_only` the other commands use, so the ambient stdlib and `⌁↑`/`⌁↓` are available from the first line — `⌁↓⌬`/`⌁↑⌬` deliberately are not, since the REPL has no single entry file to scope a filesystem capability against (`spec/LANGUAGE_SPEC.md` §5's still-open artifact model). Because evaluation is genuinely incremental now, a native with an observable effect fires exactly once per submission, not once per later line — the replay hazard the earlier whole-buffer design had is gone by construction, not merely avoided in practice. Like `run`, its printed value uses `Value`'s derived `Debug` representation — an implementation convention, not a stable display format. |
 | `inspect` | exposes intermediate representations (`--tokens`, `--ast`, `--core`) via debug-printable types already public in `obfusku-syntax`/`obfusku-core` |
-| `build`, `test` | **explicitly unresolved** — both depend on the artifact/module distribution model `spec/LANGUAGE_SPEC.md` §5 already flags as undecided; not invented here |
+| `build` | `syntax::parse_and_desugar` → `typecheck::check` over the entry module's whole reachable import graph, requiring a real Project (`obfusku.toml`, `ADR-017`) — no bare-file fallback. Certifies the Project as a valid, distributable Source Artifact; writes nothing to disk (no packaging format exists yet). |
+| `test` | **explicitly unresolved** — needs a language-level testing construct that does not exist; not invented here as a CLI-level naming convention (`spec/LANGUAGE_SPEC.md` §5). |
 | `version` | crate version metadata only |
 
 No crate other than `obfusku-cli` may depend on it — this is what makes
@@ -379,19 +384,25 @@ stable and rarely-changing.
 
 ## 15. Standard-library boundary
 
-Deliberately underdesigned here, matching `spec/LANGUAGE_SPEC.md` §5's
-own admission that stdlib naming/content is undecided. One architectural
-note worth recording now rather than losing: given `spec/`'s own
+`spec/LANGUAGE_SPEC.md` §5 records the current canon content
+(`List`, `Optional`, `Result`, `Array`'s combinators, `Int↔Real`
+conversion); this section stays about the *boundary* — Obfusku source
+vs. Rust — not naming/content, which is no longer undecided. The
+prediction this section originally made, before any of that existed,
+turned out correct and is now confirmed by what got built: `spec/`'s own
 ten-algorithm test found most collection operations (`map`/`filter`/
-`fold`) are ordinary combinators, not language primitives, **most of the
-standard library plausibly doesn't need to be Rust code at all** — it can
-be Obfusku source, loaded as an implicit prelude module by
-`obfusku-runtime`/`obfusku-cli`, going through the exact same
-parse/typecheck/evaluate pipeline as user code. Only genuinely primitive
-operations (raw `Array` indexing, I/O, `Cell` primitives) need native
-Rust "intrinsic" hooks inside `obfusku-runtime`. Not decided here —
-flagged as a real, favorable-looking option for whoever designs the
-stdlib boundary next.
+`fold`) are ordinary combinators, not language primitives, and **most of
+the standard library indeed did not need to be Rust code** — `List` and
+`Optional` (and `Result`, added the same way) are ordinary `.obk` source
+in `stdlib.obk`, loaded as an implicit prelude module through the exact
+same parse/typecheck/evaluate pipeline as user code. Only genuinely
+primitive operations needed native Rust hooks: `Array`'s combinators
+(no structural pattern matching exists to write them against — `ADR-021`)
+and `Int↔Real` conversion (no Core primitive crosses between the two).
+I/O was already native from the start (`ADR-010`). The boundary is: **a
+capability needs a Rust intrinsic exactly when the language's own
+surface syntax cannot express it; everything else belongs in
+`.obk`.**
 
 ---
 
@@ -519,18 +530,15 @@ grandfathered in by having existed.
    `.obk` (see §17's "Fixtures" note) — used unconditionally throughout
    the shipped CLI and module resolution; revisit only if a reason to
    change it ever surfaces.
-2. **Standard library boundary and naming** — §15's "mostly Obfusku
-   source, not Rust" idea is a lead, not a decision.
-3. **`build`/`test` CLI commands** — blocked on the artifact/module
-   distribution model, itself blocked on decisions `spec/LANGUAGE_SPEC.md`
-   §5 already names as pending.
-4. **REPL's incremental-evaluation API shape** on `obfusku-runtime` —
-   originally sketched as a requirement in §11/§12, not designed in
-   detail; resolved by deviation instead, now stated directly in §12's
-   own row — the shipped `repl` command re-runs its whole growing buffer
-   per line through the ordinary whole-module pipeline rather than adding
-   an incremental API to `obfusku-runtime`.
-
+2. **Standard-library crate extraction** — content/naming is decided
+   (§15); whether `stdlib.obk`/the native modules ever move out of
+   `crates/obfusku-cli` into a standalone crate remains open, and isn't
+   forced by anything decided so far.
+3. **`test` CLI command** — `build` is implemented (`spec/LANGUAGE_SPEC.md`
+   §5); `test` remains deliberately unimplemented because it needs a
+   language-level testing construct that does not exist, not because
+   of anything left open in the artifact/distribution model, which is
+   now resolved.
 None of these block executing §3's repository restructuring or beginning
 crate scaffolding — each is a follow-on decision, not a foundational gap.
 

@@ -12,12 +12,14 @@
 //! native's hand-written `Scheme` and its actual Rust behavior — that
 //! must be verified by tests instead (see this module's own tests).
 //!
-//! Standard native functions: `print`, `readLine`, `readFile`, and `writeFile`.
+//! Standard native functions (`GLYPH_SYSTEM_DESIGN.md` §10.2's host-effect
+//! family): `⌁↑` (print), `⌁↓` (readLine), `⌁↓⌬` (readFile), and `⌁↑⌬`
+//! (writeFile).
 //!
-//! `readLine : ∅ → ⌘` takes the Unit value (`∅`) as its argument, since
+//! `⌁↓ : ∅ → ⌘` takes the Unit value (`∅`) as its argument, since
 //! `Apply` is arity-1. EOF or read error raises built-in `Failure`.
 //!
-//! **Filesystem capability model** (`readFile`/`writeFile`):
+//! **Filesystem capability model** (`⌁↓⌬`/`⌁↑⌬`):
 //! - Paths are strings validated at runtime by the closure.
 //! - The filesystem root is the entry file's directory (`base_dir`).
 //! - Escapes (`..` or absolute paths outside root) raise `Failure("PermissionDenied", ...)`.
@@ -45,25 +47,22 @@ pub fn load_io_only() -> (Prelude, HashMap<String, Value>) {
     let mut values = HashMap::new();
 
     types.insert(
-        "print".to_string(),
+        "⌁↑".to_string(),
         Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
             &CoreType::Function(Box::new(CoreType::Str), Box::new(CoreType::Unit)),
             &HashMap::new(),
         )),
     );
-    values.insert("print".to_string(), Value::Native(Rc::new(print_native())));
+    values.insert("⌁↑".to_string(), Value::Native(Rc::new(print_native())));
 
     types.insert(
-        "readLine".to_string(),
+        "⌁↓".to_string(),
         Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
             &CoreType::Function(Box::new(CoreType::Unit), Box::new(CoreType::Str)),
             &HashMap::new(),
         )),
     );
-    values.insert(
-        "readLine".to_string(),
-        Value::Native(Rc::new(read_line_native())),
-    );
+    values.insert("⌁↓".to_string(), Value::Native(Rc::new(read_line_native())));
 
     (types, values)
 }
@@ -82,19 +81,19 @@ pub fn load(base_dir: &Path) -> (Prelude, HashMap<String, Value>) {
     );
 
     types.insert(
-        "readFile".to_string(),
+        "⌁↓⌬".to_string(),
         Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
             &CoreType::Function(Box::new(CoreType::Str), Box::new(CoreType::Str)),
             &HashMap::new(),
         )),
     );
     values.insert(
-        "readFile".to_string(),
+        "⌁↓⌬".to_string(),
         Value::Native(Rc::new(read_file_native(Rc::clone(&root)))),
     );
 
     types.insert(
-        "writeFile".to_string(),
+        "⌁↑⌬".to_string(),
         Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
             &CoreType::Function(
                 Box::new(CoreType::Str),
@@ -107,18 +106,23 @@ pub fn load(base_dir: &Path) -> (Prelude, HashMap<String, Value>) {
         )),
     );
     values.insert(
-        "writeFile".to_string(),
+        "⌁↑⌬".to_string(),
         Value::Native(Rc::new(write_file_native(root))),
     );
 
     (types, values)
 }
 
-/// Resolves `user_path` against `root` *lexically* — no filesystem
-/// access, so it works identically whether the target exists yet
-/// (`writeFile` creating a new file) or not. Rejects an absolute
+/// Resolves `user_path` against `root` — `root` must already be
+/// canonicalized (`load`'s own contract). First, lexically: no
+/// filesystem access, so it works identically whether the target exists
+/// yet (`writeFile` creating a new file) or not; rejects an absolute
 /// `user_path` outright, and rejects any `..` that would climb above
-/// `root` itself; `Some` only for a path that stays within `root`.
+/// `root` itself. Second, `ADR-019`'s symlink-escape check: the
+/// lexically-resolved path's real, symlink-followed location must also
+/// stay within `root` — a path that is lexically well-formed but
+/// resolves through a symlink to somewhere outside `root` is rejected
+/// here, not left to look like an ordinary allowed access.
 fn resolve_within_root(root: &Path, user_path: &str) -> Option<PathBuf> {
     let candidate = Path::new(user_path);
     if candidate.is_absolute() {
@@ -139,7 +143,11 @@ fn resolve_within_root(root: &Path, user_path: &str) -> Option<PathBuf> {
             Component::RootDir | Component::Prefix(_) => return None,
         }
     }
-    Some(stack.iter().collect())
+    let resolved: PathBuf = stack.iter().collect();
+    if crate::project::escapes_root_via_symlink(root, &resolved) {
+        return None;
+    }
+    Some(resolved)
 }
 
 /// Constructs a `Failure(tag, message)` value (§15.2).
@@ -164,7 +172,7 @@ fn io_error_tag(e: &std::io::Error) -> &'static str {
 
 fn print_native() -> NativeFn {
     NativeFn {
-        name: "print".to_string(),
+        name: "⌁↑".to_string(),
         func: Box::new(|arg| match arg {
             Value::Str(s) => {
                 println!("{s}");
@@ -174,7 +182,7 @@ fn print_native() -> NativeFn {
             other => Err(Raised(Value::Adt {
                 tag: Rc::from("InvalidOperation"),
                 args: Rc::from(vec![Value::Str(Rc::from(
-                    format!("'print' expects a Str, found {other:?}").as_str(),
+                    format!("'⌁↑' expects a Str, found {other:?}").as_str(),
                 ))]),
             })),
         }),
@@ -183,14 +191,14 @@ fn print_native() -> NativeFn {
 
 fn read_line_native() -> NativeFn {
     NativeFn {
-        name: "readLine".to_string(),
+        name: "⌁↓".to_string(),
         func: Box::new(|arg| {
             // Unreachable through well-typed source.
             if !matches!(arg, Value::Unit) {
                 return Err(Raised(Value::Adt {
                     tag: Rc::from("InvalidOperation"),
                     args: Rc::from(vec![Value::Str(Rc::from(
-                        format!("'readLine' expects Unit, found {arg:?}").as_str(),
+                        format!("'⌁↓' expects Unit, found {arg:?}").as_str(),
                     ))]),
                 }));
             }
@@ -214,7 +222,7 @@ fn read_line_native() -> NativeFn {
 
 fn read_file_native(root: Rc<PathBuf>) -> NativeFn {
     NativeFn {
-        name: "readFile".to_string(),
+        name: "⌁↓⌬".to_string(),
         func: Box::new(move |arg| {
             let path = match &arg {
                 Value::Str(s) => s.as_ref(),
@@ -222,7 +230,7 @@ fn read_file_native(root: Rc<PathBuf>) -> NativeFn {
                     return Err(Raised(Value::Adt {
                         tag: Rc::from("InvalidOperation"),
                         args: Rc::from(vec![Value::Str(Rc::from(
-                            format!("'readFile' expects a Str, found {other:?}").as_str(),
+                            format!("'⌁↓⌬' expects a Str, found {other:?}").as_str(),
                         ))]),
                     }))
                 }
@@ -245,7 +253,7 @@ fn read_file_native(root: Rc<PathBuf>) -> NativeFn {
 /// binds the path; the second call writes the content.
 fn write_file_native(root: Rc<PathBuf>) -> NativeFn {
     NativeFn {
-        name: "writeFile".to_string(),
+        name: "⌁↑⌬".to_string(),
         func: Box::new(move |path_arg| {
             let path = match &path_arg {
                 Value::Str(s) => s.clone(),
@@ -253,14 +261,14 @@ fn write_file_native(root: Rc<PathBuf>) -> NativeFn {
                     return Err(Raised(Value::Adt {
                         tag: Rc::from("InvalidOperation"),
                         args: Rc::from(vec![Value::Str(Rc::from(
-                            format!("'writeFile' expects a Str, found {other:?}").as_str(),
+                            format!("'⌁↑⌬' expects a Str, found {other:?}").as_str(),
                         ))]),
                     }))
                 }
             };
             let root = Rc::clone(&root);
             Ok(Value::Native(Rc::new(NativeFn {
-                name: "writeFile (applied to a path)".to_string(),
+                name: "⌁↑⌬ (applied to a path)".to_string(),
                 func: Box::new(move |content_arg| {
                     let content = match &content_arg {
                         Value::Str(s) => s.as_ref(),
@@ -268,7 +276,7 @@ fn write_file_native(root: Rc<PathBuf>) -> NativeFn {
                             return Err(Raised(Value::Adt {
                                 tag: Rc::from("InvalidOperation"),
                                 args: Rc::from(vec![Value::Str(Rc::from(
-                                    format!("'writeFile' expects a Str, found {other:?}").as_str(),
+                                    format!("'⌁↑⌬' expects a Str, found {other:?}").as_str(),
                                 ))]),
                             }))
                         }
@@ -313,7 +321,7 @@ mod tests {
     #[test]
     fn print_scheme_matches_actual_native_behavior() {
         let (types, values) = load(&test_root());
-        let scheme = types.get("print").expect("print must be registered");
+        let scheme = types.get("⌁↑").expect("print must be registered");
         assert_eq!(
             scheme.ty.to_core(),
             Some(CoreType::Function(
@@ -322,7 +330,7 @@ mod tests {
             )),
         );
 
-        let Some(Value::Native(native)) = values.get("print") else {
+        let Some(Value::Native(native)) = values.get("⌁↑") else {
             panic!("expected print to be a Value::Native");
         };
         let result = (native.func)(Value::Str(Rc::from("hello")));
@@ -332,7 +340,7 @@ mod tests {
     #[test]
     fn print_native_rejects_a_non_str_argument_without_panicking() {
         let (_, values) = load(&test_root());
-        let Some(Value::Native(native)) = values.get("print") else {
+        let Some(Value::Native(native)) = values.get("⌁↑") else {
             panic!("expected print to be a Value::Native");
         };
         let result = (native.func)(Value::Int(5));
@@ -346,7 +354,7 @@ mod tests {
         // crate's own process-global `std::io::stdin()` can't be
         // swapped out for a fake per-test here.
         let (types, _) = load(&test_root());
-        let scheme = types.get("readLine").expect("readLine must be registered");
+        let scheme = types.get("⌁↓").expect("readLine must be registered");
         assert_eq!(
             scheme.ty.to_core(),
             Some(CoreType::Function(
@@ -359,7 +367,7 @@ mod tests {
     #[test]
     fn read_line_native_rejects_a_non_unit_argument_without_panicking() {
         let (_, values) = load(&test_root());
-        let Some(Value::Native(native)) = values.get("readLine") else {
+        let Some(Value::Native(native)) = values.get("⌁↓") else {
             panic!("expected readLine to be a Value::Native");
         };
         let result = (native.func)(Value::Int(5));
@@ -387,14 +395,14 @@ mod tests {
     fn read_write_schemes_match_the_curried_signature() {
         let (types, _) = load(&test_root());
         assert_eq!(
-            types.get("readFile").unwrap().ty.to_core(),
+            types.get("⌁↓⌬").unwrap().ty.to_core(),
             Some(CoreType::Function(
                 Box::new(CoreType::Str),
                 Box::new(CoreType::Str)
             )),
         );
         assert_eq!(
-            types.get("writeFile").unwrap().ty.to_core(),
+            types.get("⌁↑⌬").unwrap().ty.to_core(),
             Some(CoreType::Function(
                 Box::new(CoreType::Str),
                 Box::new(CoreType::Function(
@@ -409,7 +417,7 @@ mod tests {
     fn write_then_read_round_trips_within_the_root() {
         let root = test_root();
         let (_, values) = load(&root);
-        let Some(Value::Native(write)) = values.get("writeFile") else {
+        let Some(Value::Native(write)) = values.get("⌁↑⌬") else {
             panic!("expected writeFile to be a Value::Native");
         };
         let applied = (write.func)(Value::Str(Rc::from("greeting.txt"))).expect("apply path");
@@ -419,7 +427,7 @@ mod tests {
         let result = (write_content.func)(Value::Str(Rc::from("hello, file")));
         assert!(matches!(result, Ok(Value::Unit)), "{result:?}");
 
-        let Some(Value::Native(read)) = values.get("readFile") else {
+        let Some(Value::Native(read)) = values.get("⌁↓⌬") else {
             panic!("expected readFile to be a Value::Native");
         };
         let contents = (read.func)(Value::Str(Rc::from("greeting.txt")));
@@ -432,7 +440,7 @@ mod tests {
     #[test]
     fn read_file_outside_the_root_via_parent_traversal_is_permission_denied() {
         let (_, values) = load(&test_root());
-        let Some(Value::Native(read)) = values.get("readFile") else {
+        let Some(Value::Native(read)) = values.get("⌁↓⌬") else {
             panic!("expected readFile to be a Value::Native");
         };
         let result = (read.func)(Value::Str(Rc::from("../secret.txt")));
@@ -448,7 +456,7 @@ mod tests {
     #[test]
     fn read_file_with_an_absolute_path_is_permission_denied() {
         let (_, values) = load(&test_root());
-        let Some(Value::Native(read)) = values.get("readFile") else {
+        let Some(Value::Native(read)) = values.get("⌁↓⌬") else {
             panic!("expected readFile to be a Value::Native");
         };
         let result = (read.func)(Value::Str(Rc::from("/etc/passwd")));
@@ -466,7 +474,7 @@ mod tests {
         let root = test_root();
         std::fs::create_dir_all(root.join("sub")).unwrap();
         let (_, values) = load(&root);
-        let Some(Value::Native(write)) = values.get("writeFile") else {
+        let Some(Value::Native(write)) = values.get("⌁↑⌬") else {
             panic!("expected writeFile to be a Value::Native");
         };
         let applied = (write.func)(Value::Str(Rc::from("sub/nested.txt"))).expect("apply path");
@@ -481,7 +489,7 @@ mod tests {
     #[test]
     fn read_file_that_does_not_exist_is_an_io_error_not_permission_denied() {
         let (_, values) = load(&test_root());
-        let Some(Value::Native(read)) = values.get("readFile") else {
+        let Some(Value::Native(read)) = values.get("⌁↓⌬") else {
             panic!("expected readFile to be a Value::Native");
         };
         let result = (read.func)(Value::Str(Rc::from("does-not-exist.txt")));
@@ -526,7 +534,7 @@ mod tests {
         }
 
         let (_, values) = load(&root);
-        let Some(Value::Native(read)) = values.get("readFile") else {
+        let Some(Value::Native(read)) = values.get("⌁↓⌬") else {
             panic!("expected readFile to be a Value::Native");
         };
         let result = (read.func)(Value::Str(Rc::from("no-read.txt")));

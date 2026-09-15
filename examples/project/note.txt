@@ -1,0 +1,2 @@
+This file lives at the Project root and is read via the Project-root
+filesystem boundary, not an entry-file-relative one.

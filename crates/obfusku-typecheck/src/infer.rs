@@ -28,10 +28,10 @@ fn op_glyph(op: BinOp) -> &'static str {
         BinOp::Mod => "⌗",
         BinOp::Lt => "<",
         BinOp::Gt => ">",
-        BinOp::Le => "<=",
-        BinOp::Ge => ">=",
-        BinOp::Eq => "==",
-        BinOp::NotEq => "!=",
+        BinOp::Le => "≤",
+        BinOp::Ge => "≥",
+        BinOp::Eq => "≡",
+        BinOp::NotEq => "≠",
         BinOp::Xor => "⊻",
     }
 }

@@ -316,11 +316,13 @@ unrelated operations just to keep the "fixed meaning" rule technically true.
    the Core: combinators over built-in collections plus `match`+recursion
    over user ADTs is the design, not a placeholder. `GLYPH_SYSTEM_DESIGN.md`
    accordingly carries no loop-delimiter glyphs.
-3. **Recursion vs. fold-as-idiom — open.** Standard-library iteration idiom
-   is not yet written; see `LANGUAGE_SPEC.md` §5.
-4. **CLI / artifact model — open.** The module *syntax* is defined
-   (`ABSTRACT_GRAMMAR.md` §20, `CONCRETE_SYMBOLIC_GRAMMAR.md` §14), but the
-   artifact/packaging/distribution model is not; see `LANGUAGE_SPEC.md` §5.
+3. **Recursion vs. fold-as-idiom — resolved, non-normatively.**
+   Standard-library iteration idiom is written in `LANGUAGE_SPEC.md` §6.
+4. **CLI / artifact model — resolved.** `ADR-017`–`ADR-020` define the
+   Project model, project-relative resolution, the filesystem boundary,
+   and the `obfusku.toml` manifest; see `LANGUAGE_SPEC.md` §5. Packaging
+   *format* for a distributed artifact remains open — the model itself
+   does not.
 5. **What (if anything) survives from the old symbol table — resolved.**
    `GLYPH_SYSTEM_DESIGN.md` records which historical glyphs were kept,
    rejected, or repurposed.

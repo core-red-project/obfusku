@@ -1,0 +1,30 @@
+// ═══════════════════════════════════════════════════════════════
+// Result<T,E> in Obfusku
+// Demonstrates: the ambient Result ADT (✓/✗), pattern matching,
+// and its separation from the Exception channel.
+// ═══════════════════════════════════════════════════════════════
+
+// A domain function that can reasonably fail: division that reports
+// an expected failure as a value, not an exceptional unwind.
+λsafeDivide(numerator: ⟁, denominator: ⟁): Result ▷ ⟁ ▷ ⌘ →
+    ⟡ denominator ≡ 0 {
+        ◉ → ✗("division by zero")
+        ⟢ ◎ → ✓(numerator ÷ denominator)
+    }
+
+// Consuming a Result is ordinary pattern matching — no combinator
+// vocabulary is part of the 1.0 canon for Result.
+λdescribe(r: Result ▷ ⟁ ▷ ⌘): ⌘ →
+    ⟡ r {
+        ✓(v) → "ok"
+        ⟢ ✗(msg) → msg
+    }
+
+ok ≔ safeDivide(10, 2)
+err ≔ safeDivide(10, 0)
+
+okStr ≔ describe(ok)
+errStr ≔ describe(err)
+
+result ≔ errStr
+❧

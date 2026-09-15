@@ -1,9 +1,11 @@
-//! Module resolver: resolves `ImportDeclaration`s to same-directory
-//! `<module_name>.obk` files, recursively, with cycle detection.
+//! Module resolver: resolves `ImportDeclaration`s to `.obk` files
+//! anywhere under the Project root, by bare-name search
+//! (`ADR-017`/`ADR-018`), recursively, with cycle detection.
 //!
 //! Each imported module is independently parsed, desugared, type-checked,
 //! and evaluated. Only exported (`⟳`) bindings are provided to the importer.
 
+use crate::project::{self, ModuleSearch};
 use obfusku_diagnostics::{Diagnostic, Severity, SourceMap, Span};
 use obfusku_runtime::Value;
 use obfusku_syntax::ast::Declaration;
@@ -40,6 +42,33 @@ fn circular_import_error(path: &Path) -> Diagnostic {
     }
 }
 
+fn not_found_error(name: &str, span: Span) -> Diagnostic {
+    Diagnostic {
+        severity: Severity::Error,
+        message: format!(
+            "'{name}' does not resolve to any '.obk' file under this Project (\u{2192} \
+             {name}.obk not found anywhere in the Project's own module tree)"
+        ),
+        primary: span,
+    }
+}
+
+fn ambiguous_error(name: &str, matches: &[PathBuf], span: Span) -> Diagnostic {
+    Diagnostic {
+        severity: Severity::Error,
+        message: format!(
+            "'{name}' is ambiguous — more than one module named '{name}.obk' exists under this \
+             Project: {}",
+            matches
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        primary: span,
+    }
+}
+
 /// Built-in exception constructors synthesized into every module,
 /// excluded from export to avoid collision on import.
 pub(crate) const BUILTIN_EXPORTS: [&str; 5] = [
@@ -60,11 +89,13 @@ fn collision_error(name: &str, span: Span) -> Diagnostic {
 
 /// Resolves `surface`'s `ImportDeclaration`s, returning imported types,
 /// values, and type declarations. Caches modules by canonical path to
-/// ensure each module is resolved once.
+/// ensure each module is resolved once. `project_root` is the boundary
+/// every import is searched under (`ADR-018`) — the same root used for
+/// filesystem natives (`ADR-019`).
 #[allow(clippy::type_complexity)]
 pub fn resolve_imports(
     surface: &obfusku_syntax::ast::Module,
-    base_dir: &Path,
+    project_root: &Path,
     source_map: &mut SourceMap,
     cache: &mut HashMap<PathBuf, ResolvedModule>,
     resolving: &mut HashSet<PathBuf>,
@@ -85,8 +116,18 @@ pub fn resolve_imports(
         let Declaration::Import(import) = decl else {
             continue;
         };
-        let imported_path = base_dir.join(format!("{}.obk", import.module_name));
-        match resolve_module(&imported_path, source_map, cache, resolving) {
+        let imported_path = match project::find_module(project_root, &import.module_name) {
+            ModuleSearch::Found(path) => path,
+            ModuleSearch::NotFound => {
+                errors.push(not_found_error(&import.module_name, import.span));
+                continue;
+            }
+            ModuleSearch::Ambiguous(matches) => {
+                errors.push(ambiguous_error(&import.module_name, &matches, import.span));
+                continue;
+            }
+        };
+        match resolve_module(&imported_path, project_root, source_map, cache, resolving) {
             Ok(resolved) => {
                 for (name, scheme) in &resolved.types {
                     if types.contains_key(name) {
@@ -112,12 +153,14 @@ pub fn resolve_imports(
 }
 
 /// Fully resolves one `.obk` file: parse → resolve its own imports
-/// (recursively) → desugar → type-check → evaluate, returning only its
-/// exported surface. Cached by canonical path; cycle-checked via
-/// `resolving`. `path`'s text is registered in `source_map` even on
-/// failure, so any diagnostic returned can still be rendered.
+/// (recursively, against the same `project_root`) → desugar →
+/// type-check → evaluate, returning only its exported surface. Cached
+/// by canonical path; cycle-checked via `resolving`. `path`'s text is
+/// registered in `source_map` even on failure, so any diagnostic
+/// returned can still be rendered.
 pub fn resolve_module(
     path: &Path,
+    project_root: &Path,
     source_map: &mut SourceMap,
     cache: &mut HashMap<PathBuf, ResolvedModule>,
     resolving: &mut HashSet<PathBuf>,
@@ -130,7 +173,7 @@ pub fn resolve_module(
         return Err(vec![circular_import_error(path)]);
     }
 
-    let result = resolve_module_uncached(path, source_map, cache, resolving);
+    let result = resolve_module_uncached(path, project_root, source_map, cache, resolving);
     resolving.remove(&canonical);
 
     let resolved = result?;
@@ -140,19 +183,19 @@ pub fn resolve_module(
 
 fn resolve_module_uncached(
     path: &Path,
+    project_root: &Path,
     source_map: &mut SourceMap,
     cache: &mut HashMap<PathBuf, ResolvedModule>,
     resolving: &mut HashSet<PathBuf>,
 ) -> Result<ResolvedModule, Vec<Diagnostic>> {
     let source = std::fs::read_to_string(path).map_err(|e| vec![io_error(path, e)])?;
-    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
 
     let source_id = source_map.add_file(&source);
     let tokens = obfusku_syntax::lexer::tokenize(&source, source_id).map_err(|d| vec![d])?;
     let surface = obfusku_syntax::parser::parse(&tokens, source_id)?;
 
     let (type_prelude, value_prelude, imported_type_decls) =
-        resolve_imports(&surface, base_dir, source_map, cache, resolving)?;
+        resolve_imports(&surface, project_root, source_map, cache, resolving)?;
 
     let core_module = obfusku_syntax::desugar::desugar(&surface)?;
     let typed = obfusku_typecheck::check_with_prelude_and_types(

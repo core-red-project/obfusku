@@ -2,8 +2,11 @@
 //! No language logic of its own: every step below is a direct call into
 //! the crate that owns that stage.
 
+pub mod array_native;
 pub mod modules;
 pub mod natives;
+pub mod numeric_native;
+pub mod project;
 pub mod stdlib;
 
 use obfusku_diagnostics::{Diagnostic, SourceMap};
@@ -53,9 +56,11 @@ fn read_entry_file(path: &Path) -> Result<String, Diagnostic> {
 }
 
 /// Like [`run_source`], but resolves `path`'s own `ImportDeclaration`s
-/// first (same-directory `<module_name>.obk` files, per
-/// [`modules::resolve_module`]) before type-checking/evaluating `path`
-/// itself against them.
+/// first, against the Project root [`project::resolve_entry_point`]
+/// discovers (`ADR-017`/`ADR-018`) — a bare-file path with no manifest
+/// above it degrades to same-directory resolution, unchanged from
+/// before this model existed. `path` may be a single `.obk` file or a
+/// Project directory (its own `obfusku.toml` names the entry module).
 ///
 /// Returns the [`SourceMap`] alongside any diagnostics: a diagnostic can
 /// originate in an *imported* file, so rendering it needs the shared map
@@ -64,9 +69,26 @@ fn read_entry_file(path: &Path) -> Result<String, Diagnostic> {
 /// non-fatal warnings — see [`run_source`].
 pub fn run_file(path: &Path) -> Result<(RunResult, Vec<Diagnostic>), (SourceMap, Vec<Diagnostic>)> {
     let mut source_map = SourceMap::new();
-    let source = match read_entry_file(path) {
+    let entry = match project::resolve_entry_point(path) {
+        Ok(e) => e,
+        // No file has been registered yet at this point — a
+        // `Span::default()`-anchored diagnostic needs *some* file in
+        // the map to render safely against (`SourceId(0)` must exist).
+        // Registered only on this early-return path, so the entry
+        // file's own `SourceId` stays 0 on every other path, matching
+        // what callers (e.g. `main.rs`'s warning rendering, which
+        // rebuilds its own single-file map) already assume.
+        Err(d) => {
+            source_map.add_file("");
+            return Err((source_map, vec![d]));
+        }
+    };
+    let source = match read_entry_file(&entry.entry_file) {
         Ok(s) => s,
-        Err(d) => return Err((source_map, vec![d])),
+        Err(d) => {
+            source_map.add_file("");
+            return Err((source_map, vec![d]));
+        }
     };
     let source_id = source_map.add_file(&source);
     let tokens = match obfusku_syntax::lexer::tokenize(&source, source_id) {
@@ -78,20 +100,26 @@ pub fn run_file(path: &Path) -> Result<(RunResult, Vec<Diagnostic>), (SourceMap,
         Err(ds) => return Err((source_map, ds)),
     };
 
-    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let project_root = entry.project_root.as_path();
     let (mut type_prelude, mut value_prelude, mut all_type_decls) =
         match stdlib::load(&mut source_map) {
             Ok(p) => p,
             Err(ds) => return Err((source_map, ds)),
         };
-    let (native_types, native_values) = natives::load(base_dir);
+    let (native_types, native_values) = natives::load(project_root);
     type_prelude.extend(native_types);
     value_prelude.extend(native_values);
+    let (array_types, array_values) = array_native::load();
+    type_prelude.extend(array_types);
+    value_prelude.extend(array_values);
+    let (numeric_types, numeric_values) = numeric_native::load();
+    type_prelude.extend(numeric_types);
+    value_prelude.extend(numeric_values);
     let mut cache = std::collections::HashMap::new();
     let mut resolving = std::collections::HashSet::new();
     match modules::resolve_imports(
         &surface,
-        base_dir,
+        project_root,
         &mut source_map,
         &mut cache,
         &mut resolving,
@@ -136,9 +164,20 @@ pub fn run_file(path: &Path) -> Result<(RunResult, Vec<Diagnostic>), (SourceMap,
 /// Like [`check_source`], but resolves imports first — see [`run_file`].
 pub fn check_file(path: &Path) -> Result<Vec<Diagnostic>, (SourceMap, Vec<Diagnostic>)> {
     let mut source_map = SourceMap::new();
-    let source = match read_entry_file(path) {
+    let entry = match project::resolve_entry_point(path) {
+        Ok(e) => e,
+        // See run_file's identical guard.
+        Err(d) => {
+            source_map.add_file("");
+            return Err((source_map, vec![d]));
+        }
+    };
+    let source = match read_entry_file(&entry.entry_file) {
         Ok(s) => s,
-        Err(d) => return Err((source_map, vec![d])),
+        Err(d) => {
+            source_map.add_file("");
+            return Err((source_map, vec![d]));
+        }
     };
     let source_id = source_map.add_file(&source);
     let tokens = match obfusku_syntax::lexer::tokenize(&source, source_id) {
@@ -150,18 +189,98 @@ pub fn check_file(path: &Path) -> Result<Vec<Diagnostic>, (SourceMap, Vec<Diagno
         Err(ds) => return Err((source_map, ds)),
     };
 
-    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let project_root = entry.project_root.as_path();
     let (mut type_prelude, _, mut all_type_decls) = match stdlib::load(&mut source_map) {
         Ok(p) => p,
         Err(ds) => return Err((source_map, ds)),
     };
-    let (native_types, _) = natives::load(base_dir);
+    let (native_types, _) = natives::load(project_root);
     type_prelude.extend(native_types);
+    let (array_types, _) = array_native::load();
+    type_prelude.extend(array_types);
+    let (numeric_types, _) = numeric_native::load();
+    type_prelude.extend(numeric_types);
     let mut cache = std::collections::HashMap::new();
     let mut resolving = std::collections::HashSet::new();
     match modules::resolve_imports(
         &surface,
-        base_dir,
+        project_root,
+        &mut source_map,
+        &mut cache,
+        &mut resolving,
+    ) {
+        Ok((import_types, _, import_type_decls)) => {
+            type_prelude.extend(import_types);
+            all_type_decls.extend(import_type_decls);
+        }
+        Err(ds) => return Err((source_map, ds)),
+    };
+
+    let core_module = match obfusku_syntax::desugar::desugar(&surface) {
+        Ok(m) => m,
+        Err(ds) => return Err((source_map, ds)),
+    };
+    match obfusku_typecheck::check_with_prelude_and_types(
+        &core_module,
+        type_prelude,
+        all_type_decls,
+    ) {
+        Ok(typed) => Ok(typed.warnings),
+        Err(ds) => Err((source_map, ds)),
+    }
+}
+
+/// The `build` pipeline: identical to [`check_file`]'s pipeline
+/// (resolve → parse → desugar → type-check the entry module's whole
+/// reachable import graph) except entry-point resolution requires a
+/// real Project (`project::require_project_entry_point` — no bare-file
+/// fallback). Success here certifies the Project as a valid,
+/// distributable Source Artifact under the 1.0 model (`ADR-017`) — it
+/// does not itself copy or package anything; no physical artifact is
+/// written. Returns non-fatal warnings on success, exactly like
+/// [`check_file`].
+pub fn build_project(path: &Path) -> Result<Vec<Diagnostic>, (SourceMap, Vec<Diagnostic>)> {
+    let mut source_map = SourceMap::new();
+    let entry = match project::require_project_entry_point(path) {
+        Ok(e) => e,
+        Err(d) => {
+            source_map.add_file("");
+            return Err((source_map, vec![d]));
+        }
+    };
+    let source = match read_entry_file(&entry.entry_file) {
+        Ok(s) => s,
+        Err(d) => {
+            source_map.add_file("");
+            return Err((source_map, vec![d]));
+        }
+    };
+    let source_id = source_map.add_file(&source);
+    let tokens = match obfusku_syntax::lexer::tokenize(&source, source_id) {
+        Ok(t) => t,
+        Err(d) => return Err((source_map, vec![d])),
+    };
+    let surface = match obfusku_syntax::parser::parse(&tokens, source_id) {
+        Ok(m) => m,
+        Err(ds) => return Err((source_map, ds)),
+    };
+
+    let project_root = entry.project_root.as_path();
+    let (mut type_prelude, _, mut all_type_decls) = match stdlib::load(&mut source_map) {
+        Ok(p) => p,
+        Err(ds) => return Err((source_map, ds)),
+    };
+    let (native_types, _) = natives::load(project_root);
+    type_prelude.extend(native_types);
+    let (array_types, _) = array_native::load();
+    type_prelude.extend(array_types);
+    let (numeric_types, _) = numeric_native::load();
+    type_prelude.extend(numeric_types);
+    let mut cache = std::collections::HashMap::new();
+    let mut resolving = std::collections::HashSet::new();
+    match modules::resolve_imports(
+        &surface,
+        project_root,
         &mut source_map,
         &mut cache,
         &mut resolving,
@@ -274,6 +393,12 @@ impl ReplSession {
         let (io_types, io_values) = natives::load_io_only();
         type_prelude.extend(io_types);
         value_prelude.extend(io_values);
+        let (array_types, array_values) = array_native::load();
+        type_prelude.extend(array_types);
+        value_prelude.extend(array_values);
+        let (numeric_types, numeric_values) = numeric_native::load();
+        type_prelude.extend(numeric_types);
+        value_prelude.extend(numeric_values);
         Ok(Self {
             source_map,
             type_prelude,

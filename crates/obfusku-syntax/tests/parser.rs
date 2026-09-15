@@ -859,8 +859,8 @@ fn all_operator_tokens_lex_without_error() {
     // compound comparison/equality tokens.
     let _ = parse_ok(
         "x ≔ 1 ✚ 2 ☠︎ 3 ✱ 4 ÷ 5 ⌗ 6\n\
-         y ≔ (1 < 2) ∧ (3 <= 4) ∧ (5 > 6) ∧ (7 >= 8)\n\
-         z ≔ (1 == 2) ∧ (3 != 4)\n\
+         y ≔ (1 < 2) ∧ (3 ≤ 4) ∧ (5 > 6) ∧ (7 ≥ 8)\n\
+         z ≔ (1 ≡ 2) ∧ (3 ≠ 4)\n\
          w ≔ ¬◉ ∨ ◎ ⊻ ◉\n\
          n ≔ −5\n❧",
     );
@@ -904,7 +904,7 @@ fn additive_binds_tighter_than_comparison() {
 
 #[test]
 fn comparison_binds_tighter_than_equality() {
-    let module = parse_ok("x ≔ 1 < 2 == 3 > 4\n❧");
+    let module = parse_ok("x ≔ 1 < 2 ≡ 3 > 4\n❧");
     let (op, lhs, rhs) = as_binop(expr_of(&module));
     assert_eq!(op, BinOp::Eq);
     assert_eq!(as_binop(lhs).0, BinOp::Lt);
@@ -913,7 +913,7 @@ fn comparison_binds_tighter_than_equality() {
 
 #[test]
 fn equality_binds_tighter_than_and() {
-    let module = parse_ok("x ≔ 1 == 2 ∧ 3 != 4\n❧");
+    let module = parse_ok("x ≔ 1 ≡ 2 ∧ 3 ≠ 4\n❧");
     let (op, lhs, rhs) = as_binop(expr_of(&module));
     assert_eq!(op, BinOp::And);
     assert_eq!(as_binop(lhs).0, BinOp::Eq);
@@ -947,13 +947,13 @@ fn comparison_does_not_chain() {
 
 #[test]
 fn equality_does_not_chain() {
-    let msg = parse_err("x ≔ 1 == 2 == 3\n❧");
+    let msg = parse_err("x ≔ 1 ≡ 2 ≡ 3\n❧");
     assert!(msg.contains("do not chain"), "{msg}");
 }
 
 #[test]
 fn mixed_comparison_operators_still_do_not_chain() {
-    let msg = parse_err("x ≔ 1 <= 2 >= 3\n❧");
+    let msg = parse_err("x ≔ 1 ≤ 2 ≥ 3\n❧");
     assert!(msg.contains("do not chain"), "{msg}");
 }
 
@@ -1043,7 +1043,7 @@ fn bare_lt_gt_are_distinct_from_le_ge_tokens() {
     // '<' alone parses as a comparison; '<=' must NOT be lexed as '<'
     // followed by a stray '=' (which would be a lex error, since bare
     // '=' is not otherwise valid).
-    let module = parse_ok("x ≔ 1 <= 2\n❧");
+    let module = parse_ok("x ≔ 1 ≤ 2\n❧");
     assert_eq!(as_binop(expr_of(&module)).0, BinOp::Le);
     let module2 = parse_ok("x ≔ 1 < 2\n❧");
     assert_eq!(as_binop(expr_of(&module2)).0, BinOp::Lt);
