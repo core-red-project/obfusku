@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Formatter over obfusku-syntax's surface AST. No dependency on obfusku-core, obfusku-typecheck, or obfusku-runtime."
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 obfusku-syntax = { path = "../obfusku-syntax" }

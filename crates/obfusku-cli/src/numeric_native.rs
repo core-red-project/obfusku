@@ -52,7 +52,7 @@ fn real_to_int(r: f64) -> Result<i64, Raised> {
         )));
     }
     let truncated = r.trunc();
-    if truncated < I64_MIN_AS_F64 || truncated >= I64_MAX_EXCLUSIVE_AS_F64 {
+    if !(I64_MIN_AS_F64..I64_MAX_EXCLUSIVE_AS_F64).contains(&truncated) {
         return Err(integer_overflow());
     }
     Ok(truncated as i64)

@@ -2,7 +2,7 @@
 
 ![Banner](obfusku-banner.png)
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 [![CI](https://github.com/core-red-project/obfusku/workflows/CI/badge.svg)](https://github.com/core-red-project/obfusku/actions)
 
@@ -52,24 +52,40 @@ This is a Core Red Project, part of the Sxnnyside Project ecosystem.
 
 ## Installation
 
-### Prerequisites
+### Option 1: Pre-built Binaries (Recommended)
 
-- Rust (1.93.0 or later)
-- just (optional task runner)
+Download the latest standalone executable for your platform from [GitHub Releases](https://github.com/core-red-project/obfusku/releases):
 
-### From Source
+- **Linux (x86_64)**: `obfusku-linux-x86_64`
+- **macOS (Apple Silicon / ARM64)**: `obfusku-macos-aarch64`
+- **macOS (Intel / x86_64)**: `obfusku-macos-x86_64`
+
+Make the binary executable and move it into your `PATH`:
+
+```bash
+chmod +x obfusku-<target>
+sudo mv obfusku-<target> /usr/local/bin/obfusku
+```
+
+### Option 2: Via Cargo
+
+If you already have the Rust toolchain installed:
+
+```bash
+cargo install --git https://github.com/core-red-project/obfusku.git obfusku-cli
+```
+
+This compiles and places the `obfusku` binary directly into your `~/.cargo/bin/`.
+
+### Option 3: From Source
 
 ```bash
 git clone https://github.com/core-red-project/obfusku.git
 cd obfusku
-
 cargo build --release -p obfusku-cli
 ```
 
-This produces a standalone `obfusku` executable at
-`target/release/obfusku`. Cargo is only needed to build that binary —
-put it on your `PATH` and everything below uses `obfusku` directly, with
-no further dependency on Cargo, the Rust toolchain, or this repository.
+This produces a standalone `obfusku` executable at `target/release/obfusku`. Place it on your `PATH` and everything below uses `obfusku` directly, with no further dependency on Cargo, the Rust toolchain, or this repository.
 
 ## Usage
 

@@ -6,7 +6,13 @@ members = ["crates/*"]
 version = "1.0.0"
 edition = "2021"
 license = "MIT"
+authors = ["Core Red Project"]
 repository = "https://github.com/core-red-project/obfusku"
+homepage = "https://github.com/core-red-project/obfusku"
+documentation = "https://github.com/core-red-project/obfusku#readme"
+readme = "README.md"
+keywords = ["esoteric", "programming-language", "hindley-milner", "interpreter", "tco"]
+categories = ["command-line-utilities", "development-tools"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

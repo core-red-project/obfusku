@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Type checking against obfusku-core's AST. Never depends on obfusku-syntax or obfusku-runtime."
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 obfusku-core = { path = "../obfusku-core" }
