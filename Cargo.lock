@@ -126,9 +126,7 @@ version = "1.0.0"
 name = "obfusku-fmt"
 version = "1.0.0"
 dependencies = [
- "obfusku-cli",
  "obfusku-diagnostics",
- "obfusku-runtime",
  "obfusku-syntax",
 ]
 
