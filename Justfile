@@ -61,6 +61,11 @@ bench:
 package:
     bash scripts/package.sh
 
+# Type-check everything for Windows from any host (compiles; does not run)
+check-windows:
+    rustup target add x86_64-pc-windows-msvc
+    cargo check --target x86_64-pc-windows-msvc --workspace --all-targets
+
 # Publish the crates in dependency order (re-run after a rate limit)
 publish *ARGS:
     bash scripts/publish-crates.sh {{ARGS}}

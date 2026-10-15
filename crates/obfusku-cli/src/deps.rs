@@ -64,10 +64,31 @@ pub fn cache_root() -> PathBuf {
     home.join(".obfusku")
 }
 
+/// A short, stable directory name for `url`: its last segment plus an
+/// FNV-1a hash. The full URL as a name overruns Windows' 260-character
+/// path limit once git adds `.git/objects/xx/…` below it.
 fn slug(url: &str) -> String {
-    url.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect()
+    let hash = url.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    let last = url
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\', ':'])
+        .next()
+        .unwrap_or("");
+    let name: String = last
+        .trim_end_matches(".git")
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(24)
+        .collect();
+    format!("{name}-{hash:016x}")
 }
 
 fn package_dir(url: &str, rev: &str) -> PathBuf {

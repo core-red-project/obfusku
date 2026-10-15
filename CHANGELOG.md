@@ -132,6 +132,7 @@ This release turns Obfusku from a minimal core into a language that can host rea
 
 ### Fixed
 
+- Dependency cache directories are named after the repository and a hash instead of the whole URL, so git no longer exceeds Windows' path limit (`Filename too long`).
 - `obfusku test` printed `t\bad.obk` on Windows; paths use `/` on every platform.
 - `obfusku test` waits forever on a test that never ends; each file now has a timeout (`[test] timeout`, default 60 s) and is killed, reported as `FAIL … timed out`.
 - Language-server diagnostics used `char` columns; LSP positions are UTF-16 code units, so a line with an emoji put the underline one column early.
