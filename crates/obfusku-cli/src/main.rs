@@ -278,7 +278,8 @@ fn cmd_test(args: &[String]) -> ExitCode {
             .strip_prefix(&root)
             .unwrap_or(file)
             .display()
-            .to_string();
+            .to_string()
+            .replace('\\', "/");
         let started = std::time::Instant::now();
         let out = run_with_timeout(&exe, file, &root, timeout);
         let ms = started.elapsed().as_millis();

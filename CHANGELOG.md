@@ -132,6 +132,7 @@ This release turns Obfusku from a minimal core into a language that can host rea
 
 ### Fixed
 
+- `obfusku test` printed `t\bad.obk` on Windows; paths use `/` on every platform.
 - `obfusku test` waits forever on a test that never ends; each file now has a timeout (`[test] timeout`, default 60 s) and is killed, reported as `FAIL … timed out`.
 - Language-server diagnostics used `char` columns; LSP positions are UTF-16 code units, so a line with an emoji put the underline one column early.
 - The language server analyzed once per queued edit and died on a panic; queued edits collapse to one analysis per document, analysis runs on a 256 MiB stack, and a panic becomes a diagnostic instead of a dead server.

@@ -1418,7 +1418,9 @@ fn a_path_dependency_supplies_modules_and_a_bundle_carries_them() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{out:?}");
-    let exe = tree.root().join("appbin");
+    let exe = tree
+        .root()
+        .join(format!("appbin{}", std::env::consts::EXE_SUFFIX));
     assert!(exe.exists());
     // The dependency's sources travel inside the executable.
     std::fs::remove_dir_all(tree.root().join("greet")).unwrap();
@@ -1462,7 +1464,13 @@ fn fetch_pins_a_git_dependency_and_run_works_offline_from_the_lock() {
     git(&["commit", "-qm", "init"]);
     git(&["tag", "v1.0.0"]);
 
-    let url = format!("file://{}", dep.display());
+    // TOML reads `\` as an escape, and a Windows path needs a third slash.
+    let slashed = dep.display().to_string().replace('\\', "/");
+    let url = if slashed.starts_with('/') {
+        format!("file://{slashed}")
+    } else {
+        format!("file:///{slashed}")
+    };
     tree.write(
         "app/obfusku.toml",
         &format!(
