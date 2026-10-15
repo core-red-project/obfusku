@@ -16,8 +16,12 @@ CRATES=(
   obfusku-fmt obfusku-cli obfusku-lsp
 )
 MAX_NEW="${MAX_NEW:-${#CRATES[@]}}"
-DRY=()
-[ "${1:-}" = "--dry-run" ] && DRY=(--dry-run)
+DRY=""
+case "${1:-}" in
+  "") ;;
+  --dry-run) DRY="--dry-run" ;;
+  *) echo "usage: $0 [--dry-run]   (MAX_NEW=N limits uploads per run)" >&2; exit 2 ;;
+esac
 
 new=0
 for crate in "${CRATES[@]}"; do
@@ -26,7 +30,7 @@ for crate in "${CRATES[@]}"; do
     exit 0
   fi
   echo "==> $crate"
-  if out="$(cargo publish --locked -p "$crate" "${DRY[@]}" 2>&1)"; then
+  if out="$(cargo publish --locked -p "$crate" ${DRY:+"$DRY"} 2>&1)"; then
     echo "$out" | tail -2
     new=$((new + 1))
   elif grep -q "already exists" <<<"$out"; then

@@ -5,6 +5,9 @@
 **GitHub Issues**
 For bugs or unexpected behavior, open an [issue](https://github.com/core-red-project/obfusku/issues). Use the bug report template and include enough context to reproduce the problem.
 
+**Discord**
+For questions, general discussion, or anything that isn't a bug — join the Sxnnyside Project community at [discord.gg/WnAvUHTnG](https://discord.gg/WnAvUHTnG).
+
 ---
 
 ## Before Asking
