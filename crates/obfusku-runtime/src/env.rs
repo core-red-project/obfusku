@@ -1,15 +1,19 @@
-//! Lexical environments — parent-chain scoping. A closure captures the
-//! [`Env`] active at its own definition site (`spec/SEMANTIC_CORE.md`
-//! §13); calling it extends *that* captured chain with one new frame for
-//! the parameter, never the caller's chain.
+//! Evaluation frames — a parent chain of slot vectors. A closure
+//! captures the [`Env`] active at its definition site
+//! (`spec/SEMANTIC_CORE.md` §13); applying it adds one frame for the
+//! parameter on that captured chain, never on the caller's.
 
 use crate::value::Value;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
+enum Slots {
+    One(Value),
+    Many(Vec<Value>),
+}
+
 struct Frame {
-    vars: RefCell<HashMap<String, Value>>,
+    slots: RefCell<Slots>,
     parent: Option<Env>,
 }
 
@@ -24,31 +28,49 @@ impl std::fmt::Debug for Env {
 }
 
 impl Env {
+    /// The empty chain a top-level closure captures.
+    #[must_use]
     pub fn root() -> Env {
         Env(Rc::new(Frame {
-            vars: RefCell::new(HashMap::new()),
+            slots: RefCell::new(Slots::Many(Vec::new())),
             parent: None,
         }))
     }
 
-    /// A fresh frame lexically nested under `self` — used both for
-    /// ordinary application (one frame per call, binding the parameter)
-    /// and for `Match` arm bindings.
-    pub fn child(&self) -> Env {
+    #[must_use]
+    pub fn push_one(&self, v: Value) -> Env {
         Env(Rc::new(Frame {
-            vars: RefCell::new(HashMap::new()),
+            slots: RefCell::new(Slots::One(v)),
             parent: Some(self.clone()),
         }))
     }
 
-    pub fn bind(&self, name: String, value: Value) {
-        self.0.vars.borrow_mut().insert(name, value);
+    #[must_use]
+    pub fn push_many(&self, vs: Vec<Value>) -> Env {
+        Env(Rc::new(Frame {
+            slots: RefCell::new(Slots::Many(vs)),
+            parent: Some(self.clone()),
+        }))
     }
 
-    pub fn lookup(&self, name: &str) -> Option<Value> {
-        if let Some(v) = self.0.vars.borrow().get(name) {
-            return Some(v.clone());
+    #[must_use]
+    pub fn get(&self, depth: u32, slot: u32) -> Value {
+        let mut frame = &self.0;
+        for _ in 0..depth {
+            frame = &frame.parent.as_ref().expect("resolved depth").0;
         }
-        self.0.parent.as_ref().and_then(|p| p.lookup(name))
+        match &*frame.slots.borrow() {
+            Slots::One(v) => v.clone(),
+            Slots::Many(vs) => vs[slot as usize].clone(),
+        }
+    }
+
+    /// Fills slot `slot` of this (innermost) frame — a letrec group
+    /// filling its own frame as each member evaluates.
+    pub fn set(&self, slot: u32, v: Value) {
+        match &mut *self.0.slots.borrow_mut() {
+            Slots::One(x) => *x = v,
+            Slots::Many(vs) => vs[slot as usize] = v,
+        }
     }
 }

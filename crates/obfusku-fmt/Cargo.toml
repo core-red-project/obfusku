@@ -9,8 +9,9 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-obfusku-syntax = { version = "1.0.0", path = "../obfusku-syntax" }
-obfusku-diagnostics = { version = "1.0.0", path = "../obfusku-diagnostics" }
+obfusku-syntax = { version = "1.1.0", path = "../obfusku-syntax" }
+obfusku-diagnostics = { version = "1.1.0", path = "../obfusku-diagnostics" }
+unicode-normalization = "0.1"
 
 [lints]
 workspace = true

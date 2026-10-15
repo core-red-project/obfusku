@@ -4,75 +4,15 @@
 //! reflect unsaved edits.
 
 use lsp_types::{Diagnostic as LspDiagnostic, DiagnosticSeverity, Position, Range};
-use obfusku_cli::{array_native, modules, natives, numeric_native, project, stdlib};
-use obfusku_diagnostics::{Diagnostic, Severity, SourceMap};
+use obfusku_diagnostics::{Diagnostic, Severity, SourceId, SourceMap};
 use std::path::Path;
 
-/// Runs parse → desugar → type-check for `source`, resolving imports and
-/// the stdlib prelude against `path`'s project root. Returns the
-/// `SourceMap` every diagnostic's span is relative to, alongside all
-/// diagnostics (fatal errors or, on success, non-fatal warnings).
+/// Runs the full check pipeline for `source`, resolving imports and the
+/// stdlib prelude against `path`'s project root. Returns the `SourceMap`
+/// every diagnostic's span is relative to, alongside all diagnostics
+/// (fatal errors or, on success, non-fatal warnings).
 pub fn analyze(path: &Path, source: &str) -> (SourceMap, Vec<Diagnostic>) {
-    let mut source_map = SourceMap::new();
-
-    let entry = match project::resolve_entry_point(path) {
-        Ok(e) => e,
-        Err(d) => {
-            source_map.add_file("");
-            return (source_map, vec![d]);
-        }
-    };
-    let source_id = source_map.add_file(source);
-
-    let tokens = match obfusku_syntax::lexer::tokenize(source, source_id) {
-        Ok(t) => t,
-        Err(d) => return (source_map, vec![d]),
-    };
-    let surface = match obfusku_syntax::parser::parse(&tokens, source_id) {
-        Ok(m) => m,
-        Err(ds) => return (source_map, ds),
-    };
-
-    let project_root = entry.project_root.as_path();
-    let (mut type_prelude, _, mut all_type_decls) = match stdlib::load(&mut source_map) {
-        Ok(p) => p,
-        Err(ds) => return (source_map, ds),
-    };
-    let (native_types, _) = natives::load(project_root);
-    type_prelude.extend(native_types);
-    let (array_types, _) = array_native::load();
-    type_prelude.extend(array_types);
-    let (numeric_types, _) = numeric_native::load();
-    type_prelude.extend(numeric_types);
-
-    let mut cache = std::collections::HashMap::new();
-    let mut resolving = std::collections::HashSet::new();
-    match modules::resolve_imports(
-        &surface,
-        project_root,
-        &mut source_map,
-        &mut cache,
-        &mut resolving,
-    ) {
-        Ok((import_types, _, import_type_decls)) => {
-            type_prelude.extend(import_types);
-            all_type_decls.extend(import_type_decls);
-        }
-        Err(ds) => return (source_map, ds),
-    }
-
-    let core_module = match obfusku_syntax::desugar::desugar(&surface) {
-        Ok(m) => m,
-        Err(ds) => return (source_map, ds),
-    };
-    match obfusku_typecheck::check_with_prelude_and_types(
-        &core_module,
-        type_prelude,
-        all_type_decls,
-    ) {
-        Ok(typed) => (source_map, typed.warnings),
-        Err(ds) => (source_map, ds),
-    }
+    obfusku_cli::analyze_text(path, source)
 }
 
 /// Converts Obfusku diagnostics (byte-offset spans against `source_map`)
@@ -86,14 +26,20 @@ pub fn to_lsp_diagnostics(
     diagnostics
         .iter()
         .map(|d| {
-            let (start, end) = source_map.span_location(d.primary);
+            // A span in an imported file has that file's positions: pin it to
+            // the first line of this one rather than underline unrelated code.
+            let own = d.primary.source.0 == 0;
+            let at = |offset: u32| {
+                if own {
+                    utf16_position(source_map, d.primary.source, offset)
+                } else {
+                    Position::new(0, 0)
+                }
+            };
             LspDiagnostic {
                 range: Range {
-                    start: Position::new(
-                        start.line.saturating_sub(1),
-                        start.column.saturating_sub(1),
-                    ),
-                    end: Position::new(end.line.saturating_sub(1), end.column.saturating_sub(1)),
+                    start: at(d.primary.start),
+                    end: at(d.primary.end),
                 },
                 severity: Some(match d.severity {
                     Severity::Error => DiagnosticSeverity::ERROR,
@@ -101,9 +47,94 @@ pub fn to_lsp_diagnostics(
                     Severity::Note => DiagnosticSeverity::INFORMATION,
                 }),
                 source: Some("obfusku".to_string()),
-                message: d.message.clone(),
+                message: if own {
+                    d.message.clone()
+                } else {
+                    format!("in an imported module: {}", d.message)
+                },
                 ..Default::default()
             }
         })
         .collect()
+}
+
+/// LSP columns count UTF-16 code units; `SourceMap` columns count `char`s.
+fn utf16_position(map: &SourceMap, source: SourceId, byte_offset: u32) -> Position {
+    let text = map.text(source);
+    let mut end = (byte_offset as usize).min(text.len());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    let line_start = text[..end].rfind('\n').map_or(0, |i| i + 1);
+    let line = text[..line_start].matches('\n').count();
+    let column = text[line_start..end].encode_utf16().count();
+    Position::new(line as u32, column as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use obfusku_diagnostics::{Diagnostic, Severity, Span};
+
+    #[test]
+    fn an_imported_files_diagnostic_is_pinned_to_line_one_with_a_prefix() {
+        let mut map = SourceMap::new();
+        map.add_file("main\n");
+        let lib = map.add_file("a\nb c d\n");
+        let d = Diagnostic {
+            severity: Severity::Error,
+            message: "boom".to_string(),
+            primary: Span {
+                source: lib,
+                start: 4,
+                end: 5,
+            },
+        };
+        let out = to_lsp_diagnostics(&map, &[d]);
+        assert_eq!(out[0].range.start, Position::new(0, 0));
+        assert_eq!(out[0].message, "in an imported module: boom");
+    }
+
+    #[test]
+    fn a_buffer_not_yet_on_disk_is_checked_not_reported_unreadable() {
+        let path = std::env::temp_dir().join("obk-unsaved-buffer-does-not-exist.obk");
+        let (_, diagnostics) = analyze(&path, "x ≔ 1\n❧\n");
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    }
+
+    #[test]
+    fn columns_count_utf16_units_after_astral_characters() {
+        let mut map = SourceMap::new();
+        // "😀" is 4 bytes in UTF-8 and 2 code units in UTF-16.
+        let id = map.add_file("\"😀\" x\n");
+        let d = Diagnostic {
+            severity: Severity::Error,
+            message: "boom".to_string(),
+            primary: Span {
+                source: id,
+                start: 7,
+                end: 8,
+            },
+        };
+        let out = to_lsp_diagnostics(&map, &[d]);
+        assert_eq!(out[0].range.start, Position::new(0, 5));
+    }
+
+    #[test]
+    fn the_entry_files_diagnostic_keeps_its_own_position() {
+        let mut map = SourceMap::new();
+        let id = map.add_file("ab\ncd\n");
+        let d = Diagnostic {
+            severity: Severity::Error,
+            message: "boom".to_string(),
+            primary: Span {
+                source: id,
+                start: 4,
+                end: 5,
+            },
+        };
+        let out = to_lsp_diagnostics(&map, &[d]);
+        assert_eq!(out[0].range.start, Position::new(1, 1));
+        assert_eq!(out[0].message, "boom");
+    }
 }

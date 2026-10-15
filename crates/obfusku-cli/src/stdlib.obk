@@ -1,20 +1,6 @@
 List t ≔ { ⊘ ⟢ ⁝(t, List ▷ t) }
 Optional t ≔ { ⦰ ⟢ ⧫(t) }
 Result t e ≔ { ✓(t) ⟢ ✗(e) }
+⌑ ≔ { ➤(⌘, Optional ▷ ⌘) ⟢ ◇(⌘) }
 
-λ⟐(f: t → u, xs: List ▷ t): List ▷ u → ⟡ xs {
-  ⊘ → ⊘
-  ⟢ ⁝(h, tl) → ⁝(f(h), ⟐(f, tl))
-}
-λ⌿(f: t → ○, xs: List ▷ t): List ▷ t → ⟡ xs {
-  ⊘ → ⊘
-  ⟢ ⁝(h, tl) → ⟡ f(h) {
-    ◉ → ⁝(h, ⌿(f, tl))
-    ⟢ ◎ → ⌿(f, tl)
-  }
-}
-λ⌽(f: u → t → u, acc: u, xs: List ▷ t): u → ⟡ xs {
-  ⊘ → acc
-  ⟢ ⁝(h, tl) → ⌽(f, f(acc, h), tl)
-}
 ❧

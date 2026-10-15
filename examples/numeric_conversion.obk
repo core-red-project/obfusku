@@ -16,10 +16,8 @@ negative ≔ ↘(0.0 ☠︎ 7.9)
 // A caught conversion failure: 1.0 ÷ 0.0 is +Infinity, which ↘ rejects.
 guarded ≔ ☊ (↘(1.0 ÷ 0.0)) λ(e) → ⟡ e {
     InvalidOperation(msg) → 0
-    ⟢ DivisionByZero → 0
-    ⟢ NonExhaustiveMatch → 0
     ⟢ IntegerOverflow → −1
-    ⟢ Failure(tag, msg) → 0
+    ⟢ _ → 0
 }
 
 result ≔ wholePart ✚ negative

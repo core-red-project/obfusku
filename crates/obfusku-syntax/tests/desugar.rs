@@ -1,5 +1,8 @@
 //! Conformance tests for Surface AST → Core AST lowering (§16, §7/§12).
 
+// Tests destructure one expected shape and fail on anything else.
+#![allow(clippy::match_wildcard_for_single_variants)]
+
 use obfusku_core::ast::{Binding, Expr, Literal};
 use obfusku_diagnostics::SourceMap;
 use obfusku_syntax::{desugar, lexer, parser};
@@ -10,7 +13,7 @@ use obfusku_syntax::{desugar, lexer, parser};
 fn flat(module: &obfusku_core::ast::Module) -> Vec<&Binding> {
     user_groups(module)
         .iter()
-        .flat_map(|g| g.bindings())
+        .flat_map(obfusku_core::ast::BindingGroup::bindings)
         .collect()
 }
 
@@ -565,14 +568,14 @@ fn constructor_reference_is_ordinary_application_after_lowering() {
 #[test]
 fn match_and_patterns_lower_structurally() {
     let module = lower_ok(
-        r#"
+        r"
         Option t ≔ { Some(t) ⟢ None }
         y ≔ ⟡ x {
           Some(n) → n
           ⟢ None → 0
         }
         ❧
-        "#,
+        ",
     );
     let y = flat(&module).into_iter().find(|b| b.name == "y").unwrap();
     match &y.value {
@@ -940,8 +943,14 @@ fn and_never_reaches_core_as_a_binaryop_it_becomes_match() {
             ));
             // Zero(false) arm's own result must be the second operand,
             // not a further-nested BinaryOp.
-            assert!(matches!(arms[0].result, Expr::Lit(Literal::Bool(false), _)));
-            assert!(matches!(arms[1].result, Expr::Lit(Literal::Bool(false), _)));
+            assert!(matches!(
+                *arms[0].result,
+                Expr::Lit(Literal::Bool(false), _)
+            ));
+            assert!(matches!(
+                *arms[1].result,
+                Expr::Lit(Literal::Bool(false), _)
+            ));
         }
         other => panic!("expected a Match, got {other:?}"),
     }
@@ -970,8 +979,11 @@ fn and_or_short_circuit_structure_names_the_correct_operand_as_the_conditional_b
             scrutinee, arms, ..
         } => {
             assert!(matches!(**scrutinee, Expr::Var(ref n, _) if n == "p"));
-            assert!(matches!(arms[0].result, Expr::Var(ref n, _) if n == "q"));
-            assert!(matches!(arms[1].result, Expr::Lit(Literal::Bool(false), _)));
+            assert!(matches!(*arms[0].result, Expr::Var(ref n, _) if n == "q"));
+            assert!(matches!(
+                *arms[1].result,
+                Expr::Lit(Literal::Bool(false), _)
+            ));
         }
         other => panic!("expected a Match, got {other:?}"),
     }
@@ -979,8 +991,8 @@ fn and_or_short_circuit_structure_names_the_correct_operand_as_the_conditional_b
     let module2 = lower_ok("y ≔ p ∨ q\n❧");
     match &flat(&module2)[0].value {
         Expr::Match { arms, .. } => {
-            assert!(matches!(arms[0].result, Expr::Lit(Literal::Bool(true), _)));
-            assert!(matches!(arms[1].result, Expr::Var(ref n, _) if n == "q"));
+            assert!(matches!(*arms[0].result, Expr::Lit(Literal::Bool(true), _)));
+            assert!(matches!(*arms[1].result, Expr::Var(ref n, _) if n == "q"));
         }
         other => panic!("expected a Match, got {other:?}"),
     }
@@ -1016,6 +1028,10 @@ fn contains_binaryop(expr: &Expr) -> bool {
         }
         Expr::ArrayLiteral { elements, .. } => elements.iter().any(contains_binaryop),
         Expr::Index { array, index, .. } => contains_binaryop(array) || contains_binaryop(index),
+        Expr::Field { base, .. } => contains_binaryop(base),
+        Expr::Update { base, fields, .. } => {
+            contains_binaryop(base) || fields.iter().any(|(_, e)| contains_binaryop(e))
+        }
     }
 }
 
@@ -1123,14 +1139,14 @@ fn named_construction_with_an_extra_unknown_field_is_rejected() {
 #[test]
 fn named_constructor_pattern_reorders_fields_into_declared_order() {
     let module = lower_ok(
-        r#"
+        r"
         Point ≔ { x: ⧆ ⟢ y: ⧆ }
         p ≔ Point { x: 1.0 ⟢ y: 2.0 }
         q ≔ ⟡ p {
           Point { y: b ⟢ x: a } → a
         }
         ❧
-        "#,
+        ",
     );
     let bindings = flat(&module);
     let q = bindings.iter().find(|b| b.name == "q").unwrap();

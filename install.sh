@@ -101,14 +101,38 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 TMP_BIN="$TMP_DIR/$BINARY_NAME"
 
-if command -v curl >/dev/null 2>&1; then
-    curl -fSL "$DOWNLOAD_URL" -o "$TMP_BIN"
-elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$TMP_BIN" "$DOWNLOAD_URL"
-else
-    error "Neither curl nor wget was found. Please install either tool to continue."
-fi
+# fetch <url> <output>: curl or wget, whichever exists.
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fSL "$1" -o "$2"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$2" "$1"
+    else
+        error "Neither curl nor wget was found. Please install either tool to continue."
+    fi
+}
 
+fetch "$DOWNLOAD_URL" "$TMP_BIN"
+
+# Verify against the release's SHA256SUMS before installing anything.
+verify_checksum() {
+    local file="$1" name="$2" sums_url="${DOWNLOAD_URL%/*}/SHA256SUMS"
+    local sums="$TMP_DIR/SHA256SUMS"
+    fetch "$sums_url" "$sums" || error "Could not download SHA256SUMS from $sums_url"
+    local expected actual
+    expected="$(awk -v n="$name" '$2 == n || $2 == "*" n {print $1}' "$sums")"
+    [ -n "$expected" ] || error "No checksum listed for $name in SHA256SUMS."
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$file" | awk '{print $1}')"
+    elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+    else
+        error "Neither sha256sum nor shasum was found; cannot verify the download."
+    fi
+    [ "$expected" = "$actual" ] || error "Checksum mismatch for $name (expected $expected, got $actual)."
+}
+
+verify_checksum "$TMP_BIN" "$ARTIFACT_NAME"
 chmod +x "$TMP_BIN"
 
 # Ensure destination exists
@@ -127,7 +151,8 @@ fi
 if [ -n "${LSP_ARTIFACT_NAME:-}" ]; then
     LSP_URL="${DOWNLOAD_URL%/*}/$LSP_ARTIFACT_NAME"
     TMP_LSP="$TMP_DIR/obfusku-lsp"
-    if curl -fSL "$LSP_URL" -o "$TMP_LSP" 2>/dev/null; then
+    if fetch "$LSP_URL" "$TMP_LSP" 2>/dev/null; then
+        verify_checksum "$TMP_LSP" "$LSP_ARTIFACT_NAME"
         chmod +x "$TMP_LSP"
         if [ "$USE_SUDO" -eq 1 ]; then
             sudo install -m 755 "$TMP_LSP" "$TARGET_DIR/obfusku-lsp"
@@ -135,6 +160,8 @@ if [ -n "${LSP_ARTIFACT_NAME:-}" ]; then
             install -m 755 "$TMP_LSP" "$TARGET_DIR/obfusku-lsp"
         fi
         info "Installed Language Server: $TARGET_DIR/obfusku-lsp"
+    else
+        warn "Could not download obfusku-lsp from $LSP_URL; continuing with the CLI only."
     fi
 fi
 

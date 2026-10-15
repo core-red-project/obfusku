@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Blocks a commit when the quality gate fails; `just check` never rewrites files.
+set -euo pipefail
+exec just check

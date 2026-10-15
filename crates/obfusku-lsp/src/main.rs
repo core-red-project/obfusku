@@ -23,11 +23,25 @@ use std::path::PathBuf;
 /// `url::Url` did in earlier `lsp-types`, so `file://` URIs are decoded
 /// by hand: strip the scheme, percent-decode the path component.
 fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
-    let rest = uri.as_str().strip_prefix("file://")?;
+    path_from_file_uri(uri.as_str())
+}
+
+fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
+    let rest = uri.strip_prefix("file://")?;
     let decoded = percent_encoding::percent_decode_str(rest)
         .decode_utf8()
         .ok()?;
-    Some(PathBuf::from(decoded.into_owned()))
+    // `file:///C:/x` carries a leading slash before the drive letter,
+    // which is not part of a Windows path.
+    let bytes = decoded.as_bytes();
+    let windows_drive =
+        bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':';
+    let path = if windows_drive {
+        &decoded[1..]
+    } else {
+        &decoded[..]
+    };
+    Some(PathBuf::from(path))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,7 +57,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `connection` must be dropped (releasing its `sender`) before this
     // join, or the writer thread blocks forever waiting for the channel
     // to close — so `run` takes ownership rather than a reference.
-    run(connection)?;
+    // The checker recurses over the syntax tree; the CLI's big stack applies here too.
+    let worker = std::thread::Builder::new()
+        .stack_size(ANALYSIS_STACK_BYTES)
+        .spawn(move || {
+            let out = run(&connection).map_err(|e| e.to_string());
+            drop(connection);
+            out
+        })?;
+    worker
+        .join()
+        .map_err(|_| "the language server thread panicked")??;
 
     io_threads.join()?;
     Ok(())
@@ -59,33 +83,62 @@ struct Document {
     text: String,
 }
 
-fn run(connection: Connection) -> Result<(), Box<dyn std::error::Error>> {
+const ANALYSIS_STACK_BYTES: usize = 256 << 20;
+
+fn run(connection: &Connection) -> Result<(), Box<dyn std::error::Error>> {
     let mut documents: HashMap<String, Document> = HashMap::new();
 
-    for msg in &connection.receiver {
-        match msg {
-            Message::Request(req) => {
-                if connection.handle_shutdown(&req)? {
-                    return Ok(());
+    while let Ok(first) = connection.receiver.recv() {
+        // Edits that queued up while the last analysis ran collapse to one
+        // analysis per document, on its newest text.
+        let mut to_analyze: Vec<String> = Vec::new();
+        let mut cleared: Vec<Uri> = Vec::new();
+        let mut next = Some(first);
+        while let Some(msg) = next.take().or_else(|| connection.receiver.try_recv().ok()) {
+            match msg {
+                Message::Request(req) => {
+                    if connection.handle_shutdown(&req)? {
+                        return Ok(());
+                    }
                 }
+                Message::Notification(not) => match handle_notification(&mut documents, not) {
+                    Some(Update::Analyze(key)) => {
+                        if !to_analyze.contains(&key) {
+                            to_analyze.push(key);
+                        }
+                    }
+                    Some(Update::Clear(uri)) => {
+                        to_analyze.retain(|k| k != uri.as_str());
+                        cleared.push(uri);
+                    }
+                    None => {}
+                },
+                Message::Response(_) => {}
             }
-            Message::Notification(not) => {
-                if let Some(key) = handle_notification(&mut documents, not) {
-                    publish_diagnostics(&connection, &documents, &key)?;
-                }
-            }
-            Message::Response(_) => {}
+        }
+        for uri in cleared {
+            publish(connection, uri, Vec::new())?;
+        }
+        for key in to_analyze {
+            publish_diagnostics(connection, &documents, &key)?;
         }
     }
     Ok(())
 }
 
-/// Applies a notification to the document store. Returns the store key
-/// whose diagnostics should be republished, if any.
+/// What a notification asks the server to publish.
+enum Update {
+    /// Re-analyze the document with this store key.
+    Analyze(String),
+    /// The document closed: remove its diagnostics from the client.
+    Clear(Uri),
+}
+
+/// Applies a notification to the document store.
 fn handle_notification(
     documents: &mut HashMap<String, Document>,
     not: Notification,
-) -> Option<String> {
+) -> Option<Update> {
     match not.method.as_str() {
         DidOpenTextDocument::METHOD => {
             let params: DidOpenTextDocumentParams = serde_json::from_value(not.params).ok()?;
@@ -98,7 +151,7 @@ fn handle_notification(
                     text: params.text_document.text,
                 },
             );
-            Some(key)
+            Some(Update::Analyze(key))
         }
         DidChangeTextDocument::METHOD => {
             let params: DidChangeTextDocumentParams = serde_json::from_value(not.params).ok()?;
@@ -114,12 +167,13 @@ fn handle_notification(
                     },
                 );
             }
-            Some(key)
+            Some(Update::Analyze(key))
         }
         DidCloseTextDocument::METHOD => {
             let params: DidCloseTextDocumentParams = serde_json::from_value(not.params).ok()?;
-            documents.remove(params.text_document.uri.as_str());
-            None
+            let uri = params.text_document.uri;
+            documents.remove(uri.as_str());
+            Some(Update::Clear(uri))
         }
         _ => None,
     }
@@ -137,12 +191,33 @@ fn publish_diagnostics(
         return Ok(());
     };
 
-    let (source_map, diagnostics) = analyze::analyze(&path, &doc.text);
-    let lsp_diagnostics = analyze::to_lsp_diagnostics(&source_map, &diagnostics);
+    // A bug in one analysis must not take the server (and every open file) down.
+    let text = doc.text.as_str();
+    let analysis = std::panic::catch_unwind(|| {
+        let (source_map, diagnostics) = analyze::analyze(&path, text);
+        analyze::to_lsp_diagnostics(&source_map, &diagnostics)
+    });
+    let lsp_diagnostics = analysis.unwrap_or_else(|_| {
+        vec![lsp_types::Diagnostic {
+            message: "internal error: the checker panicked on this file; please report it"
+                .to_string(),
+            severity: Some(lsp_types::DiagnosticSeverity::ERROR),
+            source: Some("obfusku".to_string()),
+            ..Default::default()
+        }]
+    });
 
+    publish(connection, doc.uri.clone(), lsp_diagnostics)
+}
+
+fn publish(
+    connection: &Connection,
+    uri: Uri,
+    diagnostics: Vec<lsp_types::Diagnostic>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let params = PublishDiagnosticsParams {
-        uri: doc.uri.clone(),
-        diagnostics: lsp_diagnostics,
+        uri,
+        diagnostics,
         version: None,
     };
     connection
@@ -152,4 +227,26 @@ fn publish_diagnostics(
             params,
         )))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unix_and_windows_file_uris_become_native_paths() {
+        assert_eq!(
+            path_from_file_uri("file:///home/u/my%20proj/main.obk"),
+            Some(PathBuf::from("/home/u/my proj/main.obk"))
+        );
+        assert_eq!(
+            path_from_file_uri("file:///C:/Users/u/main.obk"),
+            Some(PathBuf::from("C:/Users/u/main.obk"))
+        );
+        assert_eq!(
+            path_from_file_uri("file:///c%3A/Users/u/main.obk"),
+            Some(PathBuf::from("c:/Users/u/main.obk"))
+        );
+        assert_eq!(path_from_file_uri("untitled:Untitled-1"), None);
+    }
 }

@@ -18,18 +18,37 @@ This repository is organized as a **Non-Monolithic Cargo workspace** consisting 
 Use `just` to run common workflow tasks:
 
 ```bash
-just install     # Bootstrap toolchain components (rustfmt, clippy)
+just install     # Bootstrap toolchain components and install the git hooks
 just dev         # Start interactive REPL for local testing
 just build       # Build all workspace crates
 just test        # Run workspace test suite
 just typecheck   # Run compiler type checking across all targets
 just lint        # Run Clippy static analysis with warnings denied
 just format      # Format all workspace code with rustfmt
-just check       # Run the complete quality gate (fmt check, lint, typecheck, test)
+just format-check # Verify formatting without modifying files
+just deny        # Audit dependencies (advisories, licenses, sources); DENY_OFFLINE=1 skips the advisory fetch
+just check       # Run the complete quality gate (format-check, lint, typecheck, test, deny); never modifies files
+just bench       # Startup and core-operation timings (not part of check)
 just clean       # Clean build artifacts and caches
 ```
 
 Direct Cargo equivalents are also available (e.g. `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`).
+
+## Where Things Go
+| What | Where |
+|---|---|
+| Language semantics, grammar, decisions | `spec/` (`spec/adr/ADR-NNN-*.md` for each decision) |
+| Planning and open work | `docs/ROADMAP.md`; shipped changes in `CHANGELOG.md` |
+| Images and other assets used by docs | `docs/assets/` |
+| Compiler, runtime, CLI, LSP code | `crates/<crate>/src/`; integration tests in `crates/<crate>/tests/` |
+| Bundled standard library | `crates/obfusku-cli/src/stdlib.obk` |
+| Manifest, capabilities, dependencies | `crates/obfusku-cli/src/{manifest,capability,deps}.rs` (`ADR-029`) |
+| Example programs | `examples/` |
+| Benchmark fixtures | `benches/` |
+| Git hooks, commit-message checks | `.githooks/`, `scripts/` |
+| CI and release workflows | `.github/workflows/` |
+
+Git hooks: `just install` points `core.hooksPath` at `.githooks/` (pre-commit runs `just check`; commit-msg enforces Conventional Commits). Release notes come from `git cliff` (`cliff.toml`).
 
 ## Architecture & Data Flow
 1. **Source Text** → `obfusku-syntax::lexer`: UTF-8 token stream with accurate spans.

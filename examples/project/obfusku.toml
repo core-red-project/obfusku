@@ -1,3 +1,14 @@
-format = 1
-entry = "main"
+format = 2
+
+[project]
 name = "project-demo"
+version = "0.1.0"
+description = "A two-module Project that reads a note next to it."
+license = "MIT"
+
+[entry]
+module = "main"
+
+[capabilities]
+console = true
+fs = "project"

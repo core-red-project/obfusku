@@ -23,15 +23,20 @@ pub enum Declaration {
     /// file I/O) — never lowered to anything itself by
     /// `obfusku-syntax::desugar`, which only records that it occurred.
     Import(ImportDeclaration),
+    /// `"☈" Variant` — adds one variant to the open `Exception` type
+    /// (`ADR-026`). Lowers to a Core `TypeDecl` named `Exception`.
+    Exception(VariantDecl),
 }
 
 impl Declaration {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             Declaration::Value(v) => v.span,
             Declaration::Function(f) => f.span,
             Declaration::Type(t) => t.span,
             Declaration::Import(i) => i.span,
+            Declaration::Exception(v) => v.span,
         }
     }
 }
@@ -118,6 +123,7 @@ pub enum BaseType {
 }
 
 impl TypeRef {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             TypeRef::Base(_, s) | TypeRef::Named(_, s) | TypeRef::Var(_, s) => *s,
@@ -149,6 +155,7 @@ pub enum Argument {
 }
 
 impl Argument {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             Argument::Expr(e) => e.span(),
@@ -279,6 +286,19 @@ pub enum Expression {
         index: Box<Expression>,
         span: Span,
     },
+    /// `Expression "." name` — record field read.
+    Field {
+        base: Box<Expression>,
+        name: String,
+        span: Span,
+    },
+    /// `Expression "." "{" name ":" Expression (⟢ …)* "}"` — persistent
+    /// record update.
+    Update {
+        base: Box<Expression>,
+        fields: Vec<(String, Expression)>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,6 +359,7 @@ pub enum Pattern {
 }
 
 impl Pattern {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             Pattern::Var(_, s)
@@ -354,6 +375,7 @@ impl Pattern {
 }
 
 impl Expression {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             Expression::Int(_, s)
@@ -377,7 +399,9 @@ impl Expression {
             | Expression::LocalValue { span: s, .. }
             | Expression::LocalFunctions { span: s, .. }
             | Expression::ArrayLiteral { span: s, .. }
-            | Expression::Index { span: s, .. } => *s,
+            | Expression::Index { span: s, .. }
+            | Expression::Field { span: s, .. }
+            | Expression::Update { span: s, .. } => *s,
         }
     }
 }
@@ -400,6 +424,7 @@ pub enum Stage {
 }
 
 impl Stage {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             Stage::Callable(e) | Stage::Expr(e) => e.span(),

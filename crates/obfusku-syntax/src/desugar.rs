@@ -29,6 +29,7 @@ use crate::ast::{self as surface, Stage};
 use obfusku_core::ast::{self as core, Literal};
 use obfusku_diagnostics::{Diagnostic, Severity, Span};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 pub fn desugar(surface: &surface::Module) -> Result<core::Module, Vec<Diagnostic>> {
     desugar_with_ambient_mut_names(surface, &HashSet::new())
@@ -48,10 +49,29 @@ pub fn desugar_with_ambient_mut_names(
     surface: &surface::Module,
     ambient_mut_names: &HashSet<String>,
 ) -> Result<core::Module, Vec<Diagnostic>> {
+    desugar_with_ambient(surface, ambient_mut_names, &[])
+}
+
+/// Same as [`desugar_with_ambient_mut_names`], plus the type declarations
+/// of already-resolved modules (imports, stdlib, earlier REPL lines):
+/// their records can be constructed and matched by field name here.
+pub fn desugar_with_ambient(
+    surface: &surface::Module,
+    ambient_mut_names: &HashSet<String>,
+    ambient_types: &[core::TypeDecl],
+) -> Result<core::Module, Vec<Diagnostic>> {
+    let mut record_fields = HashMap::new();
+    for td in ambient_types {
+        for v in &td.variants {
+            if let Some(names) = &v.field_names {
+                record_fields.insert(v.tag.clone(), names.clone());
+            }
+        }
+    }
     let mut lowerer = Lowerer {
         fresh_counter: 0,
         mut_names: ambient_mut_names.clone(),
-        record_fields: HashMap::new(),
+        record_fields,
     };
     let mut type_decls = Vec::new();
     let mut bindings: Vec<core::BindingGroup> = Vec::new();
@@ -109,6 +129,26 @@ pub fn desugar_with_ambient_mut_names(
             // ordinary pre-existing names. By the time desugar sees an
             // `Import`, it has already served its only purpose.
             surface::Declaration::Import(_) => {}
+
+            // `ADR-026`: one more variant of the open `Exception` type,
+            // carried as a Core `TypeDecl` named `Exception`; the
+            // checker merges it into the built-in type.
+            surface::Declaration::Exception(variant) => {
+                type_decls.push(core::TypeDecl {
+                    tag: "Exception".to_string(),
+                    type_params: Vec::new(),
+                    variants: vec![core::VariantDecl {
+                        tag: variant.tag.clone(),
+                        fields: variant.fields.iter().map(lower_type_ref).collect(),
+                        field_names: variant.field_names.clone(),
+                        span: variant.span,
+                    }],
+                    span: variant.span,
+                });
+                bindings.push(core::BindingGroup::Let(synthesize_constructor_binding(
+                    variant,
+                )));
+            }
 
             // §9: each variant becomes one synthesized constructor
             // binding, always `Let`-bound (never a `LetRec` group).
@@ -313,6 +353,7 @@ fn lower_type_decl(td: &surface::TypeDeclaration) -> core::TypeDecl {
             .map(|v| core::VariantDecl {
                 tag: v.tag.clone(),
                 fields: v.fields.iter().map(lower_type_ref).collect(),
+                field_names: v.field_names.clone(),
                 span: v.span,
             })
             .collect(),
@@ -339,7 +380,7 @@ fn synthesize_constructor_binding(variant: &surface::VariantDecl) -> core::Bindi
         value = core::Expr::Lambda {
             param: name.clone(),
             param_ty: None,
-            body: Box::new(value),
+            body: Rc::new(value),
             span,
         };
     }
@@ -372,7 +413,7 @@ fn synthesize_builtin_constructor(tag: &str, arity: usize) -> core::Binding {
         value = core::Expr::Lambda {
             param: name.clone(),
             param_ty: None,
-            body: Box::new(value),
+            body: Rc::new(value),
             span,
         };
     }
@@ -489,7 +530,7 @@ impl Lowerer {
                     return Err(vec![err(
                         span,
                         format!("missing field '{field_name}' in construction of '{tag}'"),
-                    )])
+                    )]);
                 }
             }
         }
@@ -585,7 +626,7 @@ impl Lowerer {
         Ok(core::Expr::Let {
             name: decl.name.clone(),
             value: Box::new(value.unwrap()),
-            body: Box::new(core_body.unwrap()),
+            body: Rc::new(core_body.unwrap()),
             span,
         })
     }
@@ -640,7 +681,7 @@ impl Lowerer {
         }
         Ok(core::Expr::LetRec {
             bindings,
-            body: Box::new(core_body),
+            body: Rc::new(core_body),
             span,
         })
     }
@@ -779,7 +820,7 @@ impl Lowerer {
                             .ty
                             .as_ref()
                             .map(|t| rename_type_params(lower_type_ref(t), &rename)),
-                        body: Box::new(result),
+                        body: Rc::new(result),
                         span: *span,
                     };
                 }
@@ -825,7 +866,7 @@ impl Lowerer {
                     result = core::Expr::Lambda {
                         param: name,
                         param_ty: None,
-                        body: Box::new(result),
+                        body: Rc::new(result),
                         span: *span,
                     };
                 }
@@ -854,7 +895,7 @@ impl Lowerer {
                             func: Box::new(core::Expr::Lambda {
                                 param: fresh,
                                 param_ty: None,
-                                body: Box::new(core_stage_body),
+                                body: Rc::new(core_stage_body),
                                 span: *span,
                             }),
                             arg: Box::new(core_subject),
@@ -883,7 +924,7 @@ impl Lowerer {
                     match self.lower_expr(&arm.result, pipe_ref) {
                         Ok(result) => core_arms.push(core::MatchArm {
                             pattern,
-                            result,
+                            result: Rc::new(result),
                             span: arm.span,
                         }),
                         Err(mut ds) => errors.append(&mut ds),
@@ -912,12 +953,12 @@ impl Lowerer {
                             arms: vec![
                                 core::MatchArm {
                                     pattern: core::Pattern::Lit(Literal::Bool(true), *span),
-                                    result: core_rhs,
+                                    result: Rc::new(core_rhs),
                                     span: *span,
                                 },
                                 core::MatchArm {
                                     pattern: core::Pattern::Lit(Literal::Bool(false), *span),
-                                    result: core::Expr::Lit(Literal::Bool(false), *span),
+                                    result: Rc::new(core::Expr::Lit(Literal::Bool(false), *span)),
                                     span: *span,
                                 },
                             ],
@@ -931,12 +972,12 @@ impl Lowerer {
                             arms: vec![
                                 core::MatchArm {
                                     pattern: core::Pattern::Lit(Literal::Bool(true), *span),
-                                    result: core::Expr::Lit(Literal::Bool(true), *span),
+                                    result: Rc::new(core::Expr::Lit(Literal::Bool(true), *span)),
                                     span: *span,
                                 },
                                 core::MatchArm {
                                     pattern: core::Pattern::Lit(Literal::Bool(false), *span),
-                                    result: core_rhs,
+                                    result: Rc::new(core_rhs),
                                     span: *span,
                                 },
                             ],
@@ -1073,6 +1114,25 @@ impl Lowerer {
                     span: *span,
                 })
             }
+
+            surface::Expression::Field { base, name, span } => Ok(core::Expr::Field {
+                base: Box::new(self.lower_expr(base, pipe_ref)?),
+                name: name.clone(),
+                span: *span,
+            }),
+
+            surface::Expression::Update { base, fields, span } => {
+                let core_base = self.lower_expr(base, pipe_ref)?;
+                let mut core_fields = Vec::with_capacity(fields.len());
+                for (name, value) in fields {
+                    core_fields.push((name.clone(), self.lower_expr(value, pipe_ref)?));
+                }
+                Ok(core::Expr::Update {
+                    base: Box::new(core_base),
+                    fields: core_fields,
+                    span: *span,
+                })
+            }
         }
     }
 }
@@ -1080,7 +1140,11 @@ impl Lowerer {
 /// Collects names appearing in `ExplicitRef` ("˚name") anywhere in
 /// `expr`, without descending into a nested `Lambda`'s own body.
 fn collect_explicit_captures(expr: &surface::Expression, out: &mut HashSet<String>) {
-    use surface::Expression::*;
+    use surface::Expression::{
+        Application, ArrayLiteral, BinaryOp, Bool, Catch, ExplicitRef, Field, Index, Int, Lambda,
+        LocalFunctions, LocalValue, Match, NamedConstruction, Pipe, PipeRef, Raise, Real, Rebind,
+        Reference, Str, UnaryOp, Unit, Update,
+    };
     match expr {
         ExplicitRef(name, _) => {
             out.insert(name.clone());
@@ -1157,13 +1221,24 @@ fn collect_explicit_captures(expr: &surface::Expression, out: &mut HashSet<Strin
             collect_explicit_captures(array, out);
             collect_explicit_captures(index, out);
         }
+        Field { base, .. } => collect_explicit_captures(base, out),
+        Update { base, fields, .. } => {
+            collect_explicit_captures(base, out);
+            for (_, e) in fields {
+                collect_explicit_captures(e, out);
+            }
+        }
     }
 }
 
 /// Collects `(name, span)` for every `Rebind` target appearing in
 /// `expr`, without descending into a nested `Lambda`'s own body.
 fn collect_rebind_targets(expr: &surface::Expression, out: &mut Vec<(String, Span)>) {
-    use surface::Expression::*;
+    use surface::Expression::{
+        Application, ArrayLiteral, BinaryOp, Bool, Catch, ExplicitRef, Field, Index, Int, Lambda,
+        LocalFunctions, LocalValue, Match, NamedConstruction, Pipe, PipeRef, Raise, Real, Rebind,
+        Reference, Str, UnaryOp, Unit, Update,
+    };
     match expr {
         Rebind {
             name,
@@ -1224,6 +1299,13 @@ fn collect_rebind_targets(expr: &surface::Expression, out: &mut Vec<(String, Spa
         Index { array, index, .. } => {
             collect_rebind_targets(array, out);
             collect_rebind_targets(index, out);
+        }
+        Field { base, .. } => collect_rebind_targets(base, out),
+        Update { base, fields, .. } => {
+            collect_rebind_targets(base, out);
+            for (_, e) in fields {
+                collect_rebind_targets(e, out);
+            }
         }
     }
 }

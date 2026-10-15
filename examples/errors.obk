@@ -21,10 +21,9 @@
 // Catching a user-raised tagged failure
 caughtFailure ≔ ☊ (validateAge(−5)) λ(e) → ⟡ e {
   Failure(tag, msg) → msg
-  ⟢ DivisionByZero → "caught div0"
-  ⟢ NonExhaustiveMatch → "caught nem"
   ⟢ InvalidOperation(m) → m
   ⟢ IntegerOverflow → "caught overflow"
+  ⟢ _ → "caught something else"
 }
 
 // Catching a runtime division-by-zero

@@ -1,7 +1,7 @@
 # ADR-015 — `Exception` is a built-in closed ADT; `Raise`/`Catch` resolve by dynamic extent
 
 ## Status
-Accepted
+Superseded by ADR-026 for the *closedness* of `Exception` (it is open, with user-declared variants). The `Catch` semantics, the five built-in variants and the rule that `Raise` takes an `Exception` are unchanged.
 
 ## Context
 The language needed an exceptional-failure mechanism distinct from

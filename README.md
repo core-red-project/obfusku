@@ -1,6 +1,6 @@
 # Obfusku
 
-![Banner](obfusku-banner.png)
+![Banner](docs/assets/obfusku-banner.png)
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -44,8 +44,10 @@ This is a Core Red Project, part of the Sxnnyside Project ecosystem.
 - **Static Pattern Exhaustiveness**: High-assurance pattern matching compiler that statically verifies matrix coverage over constructors, literals, booleans (`◉`/`◎`), and wildcards (`_`), rejecting non-exhaustive branches before runtime.
 - **Constant-Stack Tail-Call Optimization (TCO)**: Trampoline-based evaluation runtime eliminating call stack growth on self and mutual tail calls, enabling unbounded recursive computations.
 - **Scoped Mutability & Explicit Reference Capture**: Immutable-by-default architecture with explicit mutable cells (`≔˚`), in-place rebind operations (`⚙︎`), and strict lexical closure capture sigils (`˚`).
-- **Dynamic-Extent Exception Architecture**: Structured, unwinding error model built around a closed `Exception` ADT, featuring clean `☄` (raise) and `☊` (catch) expression semantics.
-- **Ambient Functional Prelude**: Zero-dependency standard library (`stdlib.obk`) providing inductive collections (`List<T>`) and verified higher-order combinators (`map`, `filter`, `fold`) out of the box.
+- **Dynamic-Extent Exception Architecture**: Structured, unwinding error model built around an open `Exception` ADT that programs extend with typed variants (`☈`), featuring clean `☄` (raise) and `☊` (catch) expression semantics.
+- **Records and Generated Operations**: Record field access (`p.x`) and persistent update (`p.{x: v}`); equality, ordering (`<`, `⍋`) and rendering (`⍕`) are generated for every type without function parts and checked through generic functions.
+- **Collections**: `List`, a persistent `Array` (32-way trie: O(log n) get/set/push), and ordered persistent `Map`/`Set`, with construction, slicing, sorting and conversion natives.
+- **Ambient Functional Prelude**: Zero-dependency standard library (`stdlib.obk`) providing inductive collections (`List<T>`) and verified higher-order combinators (`map`, `filter`, `fold`) out of the box, visible to every module.
 - **Sandboxed Capability I/O**: Host interface providing console streaming (`print`), terminal input (`readLine`), and path-validated filesystem primitives (`readFile`, `writeFile`) scoped securely to entry directory roots.
 - **Deterministic Formatter**: Dedicated `obfusku-fmt` engine that canonizes source layout, operator precedence spacing, and semantic indentation with strict roundtrip fidelity.
 - **Language Server Protocol (LSP)**: Dedicated `obfusku-lsp` server providing real-time syntax and type diagnostics for editor integrations over JSON-RPC.
@@ -126,6 +128,12 @@ manifest at all.
 obfusku run spell.obk
 obfusku run my-project/
 
+# Pass arguments to the program (read with ⌁↓⌥, environment via ⌁↓⎈)
+obfusku run spell.obk -- --depth 10
+
+# Write a standalone executable (interpreter + sources)
+obfusku bundle my-project/ -o ouroboros
+
 # Type-check without running
 obfusku check spell.obk
 
@@ -139,14 +147,32 @@ obfusku build my-project/
 obfusku repl
 ```
 
-A Project directory needs an `obfusku.toml` naming its entry module:
+A Project directory needs an `obfusku.toml`. The smallest one names the entry
+module; `format = 2` also declares what the program may use and what it depends on:
 
 ```toml
-format = 1
-entry = "main"
+format = 2
+
+[project]
+name = "ouroboros"
+version = "0.1.0"
+
+[entry]
+module = "main"
+
+[capabilities]          # absent means everything is allowed
+console = true
+fs = "project"
+args = true
+
+[dependencies]
+utils = { github = "owner/repo", tag = "v1.2.0" }
 ```
 
-See `examples/project/` for a complete, runnable Project.
+`obfusku fetch` pins git dependencies in `obfusku.lock`; `run` never uses the
+network. A denied capability is reported by `obfusku check` before the program runs.
+See [`spec/adr/ADR-029-manifest-format-2-capabilities-and-dependencies.md`](spec/adr/ADR-029-manifest-format-2-capabilities-and-dependencies.md)
+and `examples/project/` for a complete, runnable Project.
 
 ## Architecture
 

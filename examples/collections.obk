@@ -1,0 +1,19 @@
+// ═══════════════════════════════════════════════════════════════
+// Arrays, maps and sets
+// Demonstrates: building and combining arrays, the persistent
+// ordered Map and Set, and the generated ordering (⍋, <) that
+// keys and sorting rely on.
+// ═══════════════════════════════════════════════════════════════
+
+squares ≔ ⊡(λ(n: ⟁) → n ✱ n)(⍳(10))
+tail ≔ ⌷(5)(5)(squares)
+joined ≔ ⍪(tail)(⊠(2)(0))
+sorted ≔ ⍋(["pear", "apple", "fig"])
+
+ages ≔ ⊎(⊎(⍬)("ada")(36))("alan")(41)
+adaAge ≔ ⌕(ages)("ada")
+
+seen ≔ ⊌(⊌(⍭)("a"))("a")
+
+result ≔ ⊛(ages) ✚ ⊚(seen) ✚ #(joined)
+❧

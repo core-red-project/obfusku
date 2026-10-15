@@ -1,8 +1,8 @@
 //! Inference engine — environment, unification, generalization, and the
 //! per-`Expr` typing rules (`SEMANTIC_CORE.md` §17).
 
-use crate::adt::{check_type_arity, AdtRegistry};
-use crate::types::{Scheme, Type, TypeVarId};
+use crate::adt::{AdtRegistry, check_type_arity};
+use crate::types::{Constraint, Scheme, Type, TypeVarId};
 use obfusku_core::ast::{BinOp, Expr, Literal, MatchArm, Pattern, UnOp};
 use obfusku_core::types::Type as CoreType;
 use obfusku_diagnostics::{Diagnostic, Severity, Span};
@@ -36,16 +36,6 @@ fn op_glyph(op: BinOp) -> &'static str {
     }
 }
 
-/// §18: a type with a function-typed field anywhere has no equality.
-fn type_contains_function(ty: &Type) -> bool {
-    match ty {
-        Type::Function(..) => true,
-        Type::Cell(inner) => type_contains_function(inner),
-        Type::Adt(_, args) => args.iter().any(type_contains_function),
-        Type::Int | Type::Real | Type::Str | Type::Bool | Type::Unit | Type::Var(_) => false,
-    }
-}
-
 fn warn(span: Span, message: impl Into<String>) -> Diagnostic {
     Diagnostic {
         severity: Severity::Warning,
@@ -54,7 +44,19 @@ fn warn(span: Span, message: impl Into<String>) -> Diagnostic {
     }
 }
 
+/// A generated operation required of `ty`, discharged once `ty` is known
+/// (`ADR-025`).
+struct Obligation {
+    ty: Type,
+    constraint: Constraint,
+    span: Span,
+}
+
 pub struct Checker {
+    obligations: Vec<Obligation>,
+    /// Errors found while discharging obligations inside `generalize`,
+    /// which cannot itself fail; surfaced by [`Checker::finish`].
+    deferred: Vec<Diagnostic>,
     subst: HashMap<TypeVarId, Type>,
     next_var: u32,
     adt_registry: AdtRegistry,
@@ -69,6 +71,8 @@ pub struct Checker {
 impl Checker {
     pub fn new(adt_registry: AdtRegistry) -> Self {
         Checker {
+            obligations: Vec::new(),
+            deferred: Vec::new(),
             subst: HashMap::new(),
             next_var: 0,
             adt_registry,
@@ -153,11 +157,117 @@ impl Checker {
     }
 
     /// Fresh-substitutes only `scheme.vars`; a monomorphic scheme
-    /// (`vars: []`) is a no-op, returning the same type.
-    pub fn instantiate(&mut self, scheme: &Scheme) -> Type {
+    /// (`vars: []`) is a no-op, returning the same type. Each of the
+    /// scheme's constraints becomes an obligation on the fresh variable.
+    pub fn instantiate(&mut self, scheme: &Scheme, span: Span) -> Type {
         let mapping: HashMap<TypeVarId, Type> =
             scheme.vars.iter().map(|v| (*v, self.fresh())).collect();
+        for (var, constraint) in &scheme.constraints {
+            if let Some(ty) = mapping.get(var) {
+                self.require(ty.clone(), *constraint, span);
+            }
+        }
         substitute(&scheme.ty, &mapping)
+    }
+
+    /// Records that `ty` must support `constraint`.
+    pub(crate) fn require(&mut self, ty: Type, constraint: Constraint, span: Span) {
+        self.obligations.push(Obligation {
+            ty,
+            constraint,
+            span,
+        });
+    }
+
+    /// Reduces "`ty` supports `constraint`" to obligations on bare type
+    /// variables (returned) or a diagnostic. A type supports a generated
+    /// operation when no function type occurs anywhere in its structure
+    /// (`SEMANTIC_CORE.md` §18, extended by `ADR-025`); `Cell` has
+    /// identity equality but no ordering.
+    fn reduce(
+        &self,
+        ty: &Type,
+        constraint: Constraint,
+        span: Span,
+        seen: &mut HashSet<String>,
+        out: &mut Vec<(TypeVarId, Constraint)>,
+    ) -> Result<(), Diagnostic> {
+        let ty = self.resolve(ty);
+        let fail = |what: &str| {
+            err(
+                span,
+                format!(
+                    "'{}' has no {} — {what} (SEMANTIC_CORE.md §18)",
+                    ty.describe(),
+                    constraint.describe(),
+                ),
+            )
+        };
+        match &ty {
+            Type::Int | Type::Real | Type::Str | Type::Bool | Type::Unit => Ok(()),
+            Type::Var(v) => {
+                if !out.contains(&(*v, constraint)) {
+                    out.push((*v, constraint));
+                }
+                Ok(())
+            }
+            Type::Function(..) => Err(fail("a function value has no generated operations")),
+            Type::Cell(inner) => match constraint {
+                Constraint::Eq => Ok(()),
+                Constraint::Ord => Err(fail("a mutable cell has no order")),
+                Constraint::Show => self.reduce(inner, constraint, span, seen, out),
+            },
+            Type::Adt(name, args) => {
+                for a in args {
+                    self.reduce(a, constraint, span, seen, out)?;
+                }
+                let Some(info) = self.adt_registry.adts.get(name) else {
+                    return Ok(());
+                };
+                // Containers (`Array`, `Map`, `Set`) have no variants: their
+                // arguments, handled above, are everything.
+                let key = ty.describe();
+                if !seen.insert(key) {
+                    return Ok(());
+                }
+                let params: HashMap<String, Type> = info
+                    .type_params
+                    .iter()
+                    .cloned()
+                    .zip(args.iter().cloned())
+                    .collect();
+                for tag in &info.variants {
+                    let Some(variant) = self.adt_registry.variants.get(tag) else {
+                        continue;
+                    };
+                    for field in &variant.field_types {
+                        let field_ty = instantiate_core_type_lenient(field, &params);
+                        self.reduce(&field_ty, constraint, span, seen, out)?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Discharges every outstanding obligation; whatever is still a bare
+    /// variable is ambiguous but harmless (no function type can reach
+    /// it), so it is dropped. Returns the errors found.
+    pub fn finish(&mut self) -> Vec<Diagnostic> {
+        let mut errors = std::mem::take(&mut self.deferred);
+        for ob in std::mem::take(&mut self.obligations) {
+            let mut residual = Vec::new();
+            if let Err(d) = self.reduce(
+                &ob.ty,
+                ob.constraint,
+                ob.span,
+                &mut HashSet::new(),
+                &mut residual,
+            ) {
+                errors.push(d);
+            }
+        }
+        errors
     }
 
     /// Rebinds a `Scheme` minted by a different `Checker` to this
@@ -195,13 +305,26 @@ impl Checker {
              after normalization"
         );
 
-        Scheme { vars, ty }
+        let constraints = scheme
+            .constraints
+            .iter()
+            .filter_map(|(v, c)| match mapping.get(v) {
+                Some(Type::Var(id)) => Some((*id, *c)),
+                _ => None,
+            })
+            .collect();
+        Scheme {
+            vars,
+            ty,
+            constraints,
+        }
     }
 
     /// §19.1: quantifies over every variable free in `ty` but not in
     /// `env`. Callers must only invoke this when `is_syntactic_value`
-    /// permits it.
-    pub fn generalize(&self, ty: &Type, env: &TypeEnv) -> Scheme {
+    /// permits it. Outstanding obligations on the quantified variables
+    /// become the scheme's constraints; the rest stay pending.
+    pub fn generalize(&mut self, ty: &Type, env: &TypeEnv) -> Scheme {
         let resolved = self.resolve(ty);
         let mut ty_vars = HashSet::new();
         resolved.free_vars(&mut ty_vars);
@@ -218,7 +341,40 @@ impl Checker {
         }
 
         let vars: Vec<TypeVarId> = ty_vars.difference(&env_vars).copied().collect();
-        Scheme { vars, ty: resolved }
+
+        let mut constraints: Vec<(TypeVarId, Constraint)> = Vec::new();
+        for ob in std::mem::take(&mut self.obligations) {
+            let mut residual = Vec::new();
+            match self.reduce(
+                &ob.ty,
+                ob.constraint,
+                ob.span,
+                &mut HashSet::new(),
+                &mut residual,
+            ) {
+                Err(d) => self.deferred.push(d),
+                Ok(()) => {
+                    for (v, c) in residual {
+                        if vars.contains(&v) {
+                            if !constraints.contains(&(v, c)) {
+                                constraints.push((v, c));
+                            }
+                        } else {
+                            self.obligations.push(Obligation {
+                                ty: Type::Var(v),
+                                constraint: c,
+                                span: ob.span,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        Scheme {
+            vars,
+            ty: resolved,
+            constraints,
+        }
     }
 
     pub fn infer(&mut self, expr: &Expr, env: &TypeEnv) -> Result<Type, Vec<Diagnostic>> {
@@ -230,7 +386,10 @@ impl Checker {
             Expr::Lit(Literal::Unit, _) => Ok(Type::Unit),
 
             Expr::Var(name, span) => match env.get(name) {
-                Some(scheme) => Ok(self.instantiate(scheme)),
+                Some(scheme) => {
+                    let scheme = scheme.clone();
+                    Ok(self.instantiate(&scheme, *span))
+                }
                 None => Err(vec![err(*span, format!("unknown variable '{name}'"))]),
             },
 
@@ -264,13 +423,12 @@ impl Checker {
                 crate::adt::free_params(declared, &mut free);
                 let mut fresh_map: HashMap<String, Type> = HashMap::new();
                 for name in free {
-                    let v = match self.lambda_param_vars.get(&name) {
-                        Some(existing) => existing.clone(),
-                        None => {
-                            let v = self.fresh();
-                            self.lambda_param_vars.insert(name.clone(), v.clone());
-                            v
-                        }
+                    let v = if let Some(existing) = self.lambda_param_vars.get(&name) {
+                        existing.clone()
+                    } else {
+                        let v = self.fresh();
+                        self.lambda_param_vars.insert(name.clone(), v.clone());
+                        v
                     };
                     fresh_map.insert(name, v);
                 }
@@ -371,7 +529,7 @@ impl Checker {
                         return Err(vec![err(
                             *span,
                             format!("cannot rebind: {} is not a mutable cell", other.describe()),
-                        )])
+                        )]);
                     }
                 }
                 Ok(Type::Unit)
@@ -519,11 +677,11 @@ impl Checker {
                         )?,
                         None => self.infer(&m.value, &group_env)?,
                     };
-                    if let Some(slot) = slots.get(&m.name) {
-                        if let Type::Var(id) = slot.ty {
-                            self.unify(&Type::Var(id), &inferred, m.span)
-                                .map_err(|d| vec![d])?;
-                        }
+                    if let Some(slot) = slots.get(&m.name)
+                        && let Type::Var(id) = slot.ty
+                    {
+                        self.unify(&Type::Var(id), &inferred, m.span)
+                            .map_err(|d| vec![d])?;
                     }
                     inferred_members.push((m, inferred));
                 }
@@ -583,7 +741,115 @@ impl Checker {
                     })?;
                 Ok(self.resolve(&elem_ty))
             }
+
+            Expr::Field { base, name, span } => {
+                let base_ty = self.infer(base, env)?;
+                let (_, field_ty) = self
+                    .record_field(&base_ty, name, *span)
+                    .map_err(|d| vec![d])?;
+                Ok(field_ty)
+            }
+
+            Expr::Update { base, fields, span } => {
+                let base_ty = self.infer(base, env)?;
+                for (name, value) in fields {
+                    let value_ty = self.infer(value, env)?;
+                    let (_, field_ty) = self
+                        .record_field(&base_ty, name, *span)
+                        .map_err(|d| vec![d])?;
+                    self.unify(&field_ty, &value_ty, *span).map_err(|_| {
+                        vec![err(
+                            *span,
+                            format!(
+                                "field '{name}' has type {}, but the new value has type {}",
+                                self.resolve(&field_ty).describe(),
+                                self.resolve(&value_ty).describe()
+                            ),
+                        )]
+                    })?;
+                }
+                Ok(self.resolve(&base_ty))
+            }
         }
+    }
+
+    /// Resolves `base_ty.name`: the record's type and the field's type.
+    /// A known record type is looked up directly; a still-unknown one
+    /// (an unannotated parameter) is taken to be the single record that
+    /// declares a field of that name, or is an error if that is ambiguous.
+    fn record_field(
+        &mut self,
+        base_ty: &Type,
+        name: &str,
+        span: Span,
+    ) -> Result<(Type, Type), Diagnostic> {
+        let tag = match self.resolve(base_ty) {
+            Type::Adt(adt, _) => {
+                let info = self.adt_registry.adts.get(&adt);
+                let owner = info.and_then(|i| {
+                    i.variants.iter().find(|t| {
+                        self.adt_registry
+                            .variants
+                            .get(*t)
+                            .and_then(|v| v.field_names.as_ref())
+                            .is_some_and(|names| names.iter().any(|n| n == name))
+                    })
+                });
+                match owner {
+                    Some(t) => t.clone(),
+                    None => {
+                        return Err(err(
+                            span,
+                            format!("'{adt}' is not a record with a field named '{name}'"),
+                        ));
+                    }
+                }
+            }
+            Type::Var(_) => match self.adt_registry.field_owners.get(name).map(Vec::as_slice) {
+                Some([only]) => only.clone(),
+                Some(many) if many.len() > 1 => {
+                    return Err(err(
+                        span,
+                        format!(
+                            "field '{name}' is declared by more than one record ({}); annotate                              the value's type to say which",
+                            many.join(", ")
+                        ),
+                    ));
+                }
+                _ => return Err(err(span, format!("no record declares a field '{name}'"))),
+            },
+            other => {
+                return Err(err(
+                    span,
+                    format!(
+                        "cannot read field '{name}' of {}: it is not a record",
+                        other.describe()
+                    ),
+                ));
+            }
+        };
+        let variant = self.adt_registry.variants[&tag].clone();
+        let fresh_map: HashMap<String, Type> = variant
+            .type_params
+            .iter()
+            .map(|p| (p.clone(), self.fresh()))
+            .collect();
+        let adt_ty = Type::Adt(
+            variant.adt_name.clone(),
+            variant
+                .type_params
+                .iter()
+                .map(|p| fresh_map[p].clone())
+                .collect(),
+        );
+        self.unify(base_ty, &adt_ty, span)?;
+        let index = variant
+            .field_names
+            .as_ref()
+            .and_then(|names| names.iter().position(|n| n == name))
+            .expect("owner was selected for declaring this field");
+        let field_ty = instantiate_core_type(&variant.field_types[index], &fresh_map);
+        Ok((adt_ty, field_ty))
     }
 
     /// Infers a `LetRec` member's curried `Lambda` chain against its
@@ -599,19 +865,18 @@ impl Checker {
         expected: &Type,
         env: &TypeEnv,
     ) -> Result<Type, Vec<Diagnostic>> {
-        match (expr, expected) {
-            (Expr::Lambda { param, body, .. }, Type::Function(param_ty, ret_ty)) => {
-                let mut inner_env = env.clone();
-                inner_env.insert(param.clone(), Scheme::monomorphic((**param_ty).clone()));
-                let body_ty = self.infer_lambda_chain_against(body, ret_ty, &inner_env)?;
-                Ok(Type::Function(param_ty.clone(), Box::new(body_ty)))
-            }
-            _ => {
-                let actual = self.infer(expr, env)?;
-                self.unify(&actual, expected, expr.span())
-                    .map_err(|d| vec![d])?;
-                Ok(actual)
-            }
+        if let (Expr::Lambda { param, body, .. }, Type::Function(param_ty, ret_ty)) =
+            (expr, expected)
+        {
+            let mut inner_env = env.clone();
+            inner_env.insert(param.clone(), Scheme::monomorphic((**param_ty).clone()));
+            let body_ty = self.infer_lambda_chain_against(body, ret_ty, &inner_env)?;
+            Ok(Type::Function(param_ty.clone(), Box::new(body_ty)))
+        } else {
+            let actual = self.infer(expr, env)?;
+            self.unify(&actual, expected, expr.span())
+                .map_err(|d| vec![d])?;
+            Ok(actual)
         }
     }
 
@@ -630,17 +895,7 @@ impl Checker {
             BinOp::Eq | BinOp::NotEq => {
                 let rhs_ty = self.infer(rhs, env)?;
                 self.unify(&lhs_ty, &rhs_ty, span).map_err(|d| vec![d])?;
-                let resolved = self.resolve(&lhs_ty);
-                if type_contains_function(&resolved) {
-                    return Err(vec![err(
-                        span,
-                        format!(
-                            "'{}' has no equality — a type with a function-typed value anywhere \
-                             in its structure has no generated equality (SEMANTIC_CORE.md §18)",
-                            resolved.describe()
-                        ),
-                    )]);
-                }
+                self.require(lhs_ty, Constraint::Eq, span);
                 Ok(Type::Bool)
             }
             BinOp::Add => {
@@ -655,7 +910,7 @@ impl Checker {
                                  §20.2's closed operator table) — found {}",
                                 other.describe()
                             ),
-                        )])
+                        )]);
                     }
                 };
                 let rhs_ty = self.infer(rhs, env)?;
@@ -675,9 +930,9 @@ impl Checker {
                 Ok(Type::Int)
             }
             BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => {
-                let candidate = self.numeric_dispatch(&lhs_ty, op_glyph(op), span)?;
                 let rhs_ty = self.infer(rhs, env)?;
-                self.unify(&candidate, &rhs_ty, span).map_err(|d| vec![d])?;
+                self.unify(&lhs_ty, &rhs_ty, span).map_err(|d| vec![d])?;
+                self.require(lhs_ty, Constraint::Ord, span);
                 Ok(Type::Bool)
             }
             BinOp::Xor => {
@@ -750,8 +1005,18 @@ impl Checker {
                 ));
             } else {
                 match &arm.pattern {
-                    Pattern::Constructor { tag, .. } => {
-                        if !seen_tags.insert(tag.as_str()) {
+                    Pattern::Constructor { tag, args, .. } => {
+                        // Only an arm that matches every value of its
+                        // constructor shadows a later arm with that tag; a
+                        // refutable one (`⁝(A(n), t)`) leaves cases to the next.
+                        let covers_all = args
+                            .iter()
+                            .all(|p| matches!(p, Pattern::Var(..) | Pattern::Wildcard(..)));
+                        let already = seen_tags.contains(tag.as_str());
+                        if covers_all {
+                            seen_tags.insert(tag.as_str());
+                        }
+                        if already {
                             self.warnings.push(warn(
                                 arm.span,
                                 format!(
@@ -939,6 +1204,14 @@ impl Checker {
         let Some(adt_info) = self.adt_registry.adts.get(adt_name) else {
             return Ok(()); // unresolved ADT name; permissive fallback
         };
+        if adt_info.open {
+            return Err(err(
+                span,
+                format!(
+                    "non-exhaustive match: '{adt_name}' is an open type (modules can add variants), so a wildcard or variable arm is required"
+                ),
+            ));
+        }
         let covered: HashSet<&str> = patterns
             .iter()
             .filter_map(|p| match p {
@@ -999,7 +1272,7 @@ impl Checker {
                                 "non-exhaustive match: field {field_idx} of '{tag}' requires a \
                                  wildcard or variable pattern"
                             ),
-                        ))
+                        ));
                     }
                 }
             }
@@ -1026,6 +1299,7 @@ fn substitute(ty: &Type, mapping: &HashMap<TypeVarId, Type>) -> Type {
 
 /// `obfusku_core::types::Type` → this crate's internal `Type`,
 /// substituting each `Param` per `fresh_map`.
+#[must_use]
 pub fn instantiate_core_type(core_ty: &CoreType, fresh_map: &HashMap<String, Type>) -> Type {
     match core_ty {
         CoreType::Int => Type::Int,
@@ -1051,6 +1325,27 @@ pub fn instantiate_core_type(core_ty: &CoreType, fresh_map: &HashMap<String, Typ
     }
 }
 
+/// Like [`instantiate_core_type`], but a `Param` with no mapping becomes
+/// `Unit` instead of panicking — for walking declared field types where
+/// an arity mismatch is reported elsewhere.
+fn instantiate_core_type_lenient(core_ty: &CoreType, map: &HashMap<String, Type>) -> Type {
+    match core_ty {
+        CoreType::Function(a, b) => Type::Function(
+            Box::new(instantiate_core_type_lenient(a, map)),
+            Box::new(instantiate_core_type_lenient(b, map)),
+        ),
+        CoreType::Cell(t) => Type::Cell(Box::new(instantiate_core_type_lenient(t, map))),
+        CoreType::Adt(name, args) => Type::Adt(
+            name.clone(),
+            args.iter()
+                .map(|a| instantiate_core_type_lenient(a, map))
+                .collect(),
+        ),
+        CoreType::Param(name) => map.get(name).cloned().unwrap_or(Type::Unit),
+        other => instantiate_core_type(other, map),
+    }
+}
+
 /// §19.1: only these shapes are eligible for generalization.
 /// `Constructor` is eligible only when every argument is, recursively.
 pub fn is_syntactic_value(expr: &Expr) -> bool {
@@ -1069,6 +1364,8 @@ pub fn is_syntactic_value(expr: &Expr) -> bool {
         | Expr::Let { .. }
         | Expr::LetRec { .. }
         | Expr::ArrayLiteral { .. }
-        | Expr::Index { .. } => false,
+        | Expr::Index { .. }
+        | Expr::Field { .. }
+        | Expr::Update { .. } => false,
     }
 }

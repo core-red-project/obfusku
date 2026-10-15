@@ -1,10 +1,11 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "1.0.0"
-edition = "2021"
+version = "1.1.0"
+edition = "2024"
+rust-version = "1.93"
 license = "MIT"
 authors = ["Core Red Project"]
 repository = "https://github.com/core-red-project/obfusku"
@@ -18,4 +19,32 @@ categories = ["command-line-utilities", "development-tools"]
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
-all = "warn"
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# The lints below are allowed workspace-wide because they describe the shape of
+# compiler/evaluator code, not defects; every other pedantic lint stays on.
+# Int/Real/usize conversions are the language's own numeric model; sites are not audited one by one.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+# Evaluator, parser and natives are large dispatch functions; splitting them hides the grammar.
+too_many_lines = "allow"
+# Real equality is the language's `≡` on `Real`: exact IEEE comparison is the specified behaviour.
+float_cmp = "allow"
+# Internal Result-returning functions report `Diagnostic`s; a `# Errors` section per function repeats the type.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Maps are internal and always `std` hashers.
+implicit_hasher = "allow"
+# Match arms mirror the spec's case tables one-to-one; merging them loses that correspondence.
+match_same_arms = "allow"
+# Pattern and AST code uses `l`/`r`, `a`/`b`, `ty`/`tv` pairs conventionally.
+many_single_char_names = "allow"
+similar_names = "allow"
+items_after_statements = "allow"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

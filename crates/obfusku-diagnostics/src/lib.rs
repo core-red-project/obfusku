@@ -19,6 +19,7 @@ pub struct Span {
 impl Span {
     /// The smallest span containing both `self` and `other`. Used by the
     /// parser to build a compound node's span from its parts' spans.
+    #[must_use]
     pub fn merge(self, other: Span) -> Span {
         debug_assert_eq!(
             self.source, other.source,
@@ -80,6 +81,7 @@ pub struct SourceMap {
 }
 
 impl SourceMap {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -100,11 +102,13 @@ impl SourceMap {
         id
     }
 
+    #[must_use]
     pub fn text(&self, id: SourceId) -> &str {
         &self.files[id.0 as usize]
     }
 
     /// The source text a [`Span`] refers to.
+    #[must_use]
     pub fn slice(&self, span: Span) -> &str {
         &self.text(span.source)[span.start as usize..span.end as usize]
     }
@@ -113,6 +117,7 @@ impl SourceMap {
     /// past the end of the file (e.g. an EOF-anchored diagnostic) is
     /// clamped to the end, resolving to the position right after the
     /// last character rather than panicking.
+    #[must_use]
     pub fn line_col(&self, source: SourceId, byte_offset: u32) -> LineCol {
         let text = self.text(source);
         let byte_offset = byte_offset.min(text.len() as u32);
@@ -131,6 +136,7 @@ impl SourceMap {
 
     /// The `(start, end)` line/column pair for a [`Span`] — may span
     /// multiple lines.
+    #[must_use]
     pub fn span_location(&self, span: Span) -> (LineCol, LineCol) {
         (
             self.line_col(span.source, span.start),
@@ -140,6 +146,7 @@ impl SourceMap {
 
     /// Renders a diagnostic as `"{severity}: {message} (line:col)"`,
     /// anchored at the primary span's start.
+    #[must_use]
     pub fn render(&self, diagnostic: &Diagnostic) -> String {
         let loc = self.line_col(diagnostic.primary.source, diagnostic.primary.start);
         let severity = match diagnostic.severity {

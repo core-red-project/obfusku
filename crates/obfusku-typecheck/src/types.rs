@@ -50,6 +50,7 @@ impl Type {
     /// type — for a *monomorphic* binding that's an error condition
     /// (`obfusku-typecheck`'s `check` reports it), not something this
     /// conversion silently papers over.
+    #[must_use]
     pub fn to_core(&self) -> Option<obfusku_core::types::Type> {
         use obfusku_core::types::Type as Core;
         Some(match self {
@@ -107,13 +108,66 @@ impl Type {
 pub struct Scheme {
     pub vars: Vec<TypeVarId>,
     pub ty: Type,
+    /// Generated-operation obligations on `vars` (`ADR-025`): instantiating
+    /// the scheme requires each listed variable's type to support the
+    /// constraint, exactly as `≡`, `<` and `⍕` require of their operands.
+    pub constraints: Vec<(TypeVarId, Constraint)>,
+}
+
+/// An operation the language generates for every type built from
+/// primitives, ADTs and collections — never from a function type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Constraint {
+    /// `≡`/`≠`, §18.
+    Eq,
+    /// `<`, `>`, `≤`, `≥`, `⍋`, and `Map`/`Set` keys.
+    Ord,
+    /// `⍕` — canonical rendering.
+    Show,
+}
+
+impl Constraint {
+    #[must_use]
+    pub fn describe(self) -> &'static str {
+        match self {
+            Constraint::Eq => "equality",
+            Constraint::Ord => "ordering",
+            Constraint::Show => "rendering",
+        }
+    }
 }
 
 impl Scheme {
+    #[must_use]
     pub fn monomorphic(ty: Type) -> Self {
         Scheme {
             vars: Vec::new(),
             ty,
+            constraints: Vec::new(),
+        }
+    }
+
+    /// `∀vars. ty` with no constraints.
+    #[must_use]
+    pub fn poly(vars: Vec<TypeVarId>, ty: Type) -> Self {
+        Scheme {
+            vars,
+            ty,
+            constraints: Vec::new(),
+        }
+    }
+
+    /// `∀vars. constraints ⇒ ty`.
+    #[must_use]
+    pub fn constrained(
+        vars: Vec<TypeVarId>,
+        constraints: Vec<(TypeVarId, Constraint)>,
+        ty: Type,
+    ) -> Self {
+        Scheme {
+            vars,
+            ty,
+            constraints,
         }
     }
 }

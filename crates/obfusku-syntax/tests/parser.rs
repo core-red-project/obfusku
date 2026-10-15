@@ -29,6 +29,35 @@ fn parse_err(source: &str) -> String {
     }
 }
 
+// ── resource limits ────────────────────────────────────────────────────
+
+/// Debug frames are large and a deep tree drops recursively; the test
+/// thread's default stack is not enough.
+fn on_big_stack(f: fn()) {
+    std::thread::Builder::new()
+        .stack_size(1 << 30)
+        .spawn(f)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn nesting_beyond_the_limit_is_a_diagnostic_not_a_stack_overflow() {
+    on_big_stack(|| {
+        let src = format!("x ≔ {}1{}\n❧\n", "(".repeat(5000), ")".repeat(5000));
+        assert!(parse_err(&src).contains("nesting is deeper"));
+    });
+}
+
+#[test]
+fn a_chain_beyond_the_limit_is_a_diagnostic() {
+    on_big_stack(|| {
+        let src = format!("x ≔ 1{}\n❧\n", " ✚ 1".repeat(100_001));
+        assert!(parse_err(&src).contains("chained operators"));
+    });
+}
+
 // ── valid programs ─────────────────────────────────────────────────────
 
 #[test]
@@ -79,13 +108,13 @@ fn unit_literal_in_expression_position_parses_as_expression_unit() {
 #[test]
 fn mutable_and_export_modifiers_compose() {
     let module = parse_ok(
-        r#"
+        r"
         w ≔ 1
         x ≔˚ 1
         y ≔⟳ 1
         z ≔˚⟳ 1
         ❧
-        "#,
+        ",
     );
     let flags: Vec<(bool, bool)> = module
         .declarations
@@ -227,12 +256,12 @@ fn declaration_boundary_falls_out_of_ordinary_parsing() {
     // instead of "✚" (not implemented this slice): a newline before a
     // valid continuation token does not end the declaration.
     let module = parse_ok(
-        r#"
+        r"
         x ≔ a
           ▷ f
         y ≔ b
         ❧
-        "#,
+        ",
     );
     assert_eq!(module.declarations.len(), 2);
     let Declaration::Value(x) = &module.declarations[0] else {
@@ -501,7 +530,7 @@ fn bare_nullary_constructor_reference_parses_as_an_ordinary_reference() {
 #[test]
 fn match_over_an_option_like_adt() {
     let module = parse_ok(
-        r#"
+        r"
         Option t ≔ { Some(t) ⟢ None }
         x ≔ Some(5)
         y ≔ ⟡ x {
@@ -509,7 +538,7 @@ fn match_over_an_option_like_adt() {
           ⟢ None → 0
         }
         ❧
-        "#,
+        ",
     );
     let Declaration::Value(decl) = &module.declarations[2] else {
         panic!("expected a Value declaration")
@@ -572,7 +601,7 @@ fn wildcard_and_literal_patterns_parse() {
 #[test]
 fn nested_constructor_pattern_parses() {
     let module = parse_ok(
-        r#"
+        r"
         Option t ≔ { Some(t) ⟢ None }
         y ≔ ⟡ x {
           Some(Some(n)) → n
@@ -580,7 +609,7 @@ fn nested_constructor_pattern_parses() {
           ⟢ None → 0
         }
         ❧
-        "#,
+        ",
     );
     let Declaration::Value(decl) = &module.declarations[1] else {
         panic!("expected a Value declaration")
@@ -621,14 +650,14 @@ fn optional_and_result_are_ordinary_adt_declarations() {
 #[test]
 fn result_match_parses_with_two_independent_constructors() {
     let module = parse_ok(
-        r#"
+        r"
         Result t e ≔ { Ok(t) ⟢ Err(e) }
         y ≔ ⟡ r {
           Ok(n) → n
           ⟢ Err(msg) → 0
         }
         ❧
-        "#,
+        ",
     );
     let Declaration::Value(decl) = &module.declarations[1] else {
         panic!("expected a Value declaration")
@@ -1222,14 +1251,14 @@ fn named_construction_parses_tag_and_fields() {
 #[test]
 fn named_constructor_pattern_parses_tag_and_fields() {
     let module = parse_ok(
-        r#"
+        r"
         Point ≔ { x: ⧆ ⟢ y: ⧆ }
         p ≔ Point { x: 1.0 ⟢ y: 2.0 }
         q ≔ ⟡ p {
           Point { x: a ⟢ y: b } → a
         }
         ❧
-        "#,
+        ",
     );
     let Declaration::Value(decl) = &module.declarations[2] else {
         panic!("expected a Value declaration")

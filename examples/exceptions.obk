@@ -1,0 +1,21 @@
+// ═══════════════════════════════════════════════════════════════
+// User-declared exceptions
+// Demonstrates: ☈ adds a variant to the open Exception type; a
+// handler needs a wildcard arm because other modules may add more.
+// ═══════════════════════════════════════════════════════════════
+
+☈ NotFound(⌘)
+☈ OutOfRange(⟁, ⟁)
+
+λlookup(key: ⌘): ⟁ → ☄ NotFound(key)
+
+λdescribe(e: Exception): ⌘ → ⟡ e {
+  NotFound(k) → "missing " ✚ k
+  ⟢ OutOfRange(lo, hi) → "range " ✚ ⍕(lo) ✚ ".." ✚ ⍕(hi)
+  ⟢ _ → "other"
+}
+
+message ≔ ☊ (⍕(lookup("ada"))) λ(e) → describe(e)
+
+result ≔ ⍴(message)
+❧

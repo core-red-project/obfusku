@@ -52,32 +52,61 @@ fn dotted_real_with_signed_uppercase_exponent_lexes_as_a_single_real_token() {
 }
 
 #[test]
-fn integer_directly_followed_by_an_exponent_suffix_is_not_a_real_literal() {
-    // §5's own production has no path from `IntLiteral` (`digit+`, no
-    // dot) to an exponent at all — `5e10` must NOT collapse into one
-    // `Real` token. The grammar's own "longest match among defined
-    // productions" implies the digit run stops at `5`, and `e10` is then
-    // lexed fresh as whatever it actually is: an ordinary identifier.
+fn an_exponent_without_a_fraction_makes_a_real_literal() {
+    // `ADR-027`: the exponent no longer needs the fractional part.
     assert_eq!(
-        tokenize_ok("5e10"),
+        tokenize_ok("5e10 5E-2"),
+        vec![TokenKind::Real(5e10), TokenKind::Real(5e-2), TokenKind::Eof]
+    );
+}
+
+#[test]
+fn radix_prefixes_and_digit_separators() {
+    assert_eq!(
+        tokenize_ok("0xFF 0b1010 0o17 1_000 0x_1"),
         vec![
-            TokenKind::Int(5),
-            TokenKind::Ident("e10".to_string()),
+            TokenKind::Int(255),
+            TokenKind::Int(10),
+            TokenKind::Int(15),
+            TokenKind::Int(1000),
+            TokenKind::Int(0),
+            TokenKind::Ident("x_1".to_string()),
             TokenKind::Eof
         ]
     );
 }
 
 #[test]
-fn integer_directly_followed_by_an_uppercase_exponent_suffix_is_not_a_real_literal() {
+fn a_trailing_separator_is_not_part_of_the_literal() {
     assert_eq!(
-        tokenize_ok("5E10"),
-        vec![
-            TokenKind::Int(5),
-            TokenKind::Ident("E10".to_string()),
-            TokenKind::Eof
-        ]
+        tokenize_ok("1_"),
+        vec![TokenKind::Int(1), TokenKind::Wildcard, TokenKind::Eof]
     );
+}
+
+#[test]
+fn two_to_the_63_lexes_as_the_minimum_for_the_parser_to_police() {
+    assert_eq!(
+        tokenize_ok("9223372036854775808"),
+        vec![TokenKind::Int(i64::MIN), TokenKind::Eof]
+    );
+    let mut map = SourceMap::new();
+    let src = "9223372036854775809";
+    let id = map.add_file(src);
+    assert!(lexer::tokenize(src, id).is_err());
+}
+
+#[test]
+fn unicode_escapes_name_scalar_values() {
+    assert_eq!(
+        tokenize_ok(r#""\u{41}\u{1F44D}""#),
+        vec![TokenKind::Str("A👍".to_string()), TokenKind::Eof]
+    );
+    for bad in [r#""\u{110000}""#, r#""\u{D800}""#, r#""\u41""#, r#""\u{}""#] {
+        let mut map = SourceMap::new();
+        let id = map.add_file(bad);
+        assert!(lexer::tokenize(bad, id).is_err(), "{bad}");
+    }
 }
 
 #[test]

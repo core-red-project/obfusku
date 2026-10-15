@@ -1,0 +1,21 @@
+// ═══════════════════════════════════════════════════════════════
+// Records in Obfusku
+// Demonstrates: named construction, field access with `.`,
+// persistent update with `.{ … }`, and generated rendering with ⍕.
+// ═══════════════════════════════════════════════════════════════
+
+Point ≔ { x: ⟁ ⟢ y: ⟁ }
+Segment ≔ { from: Point ⟢ to: Point }
+
+origin ≔ Point { x: 0 ⟢ y: 0 }
+corner ≔ origin.{ x: 3 ⟢ y: 4 }
+
+seg ≔ Segment { from: origin ⟢ to: corner }
+
+λdx(s: Segment): ⟁ → s.to.x ☠︎ s.from.x
+
+// Rendering is generated for every type without functions.
+label ≔ ⍕(seg)
+
+result ≔ dx(seg)
+❧

@@ -3,10 +3,18 @@
 //! `obfusku-syntax`, so these prove the type checker works independent
 //! of the parser.
 
+// Tests destructure one expected shape and fail on anything else.
+#![allow(
+    clippy::match_wildcard_for_single_variants,
+    clippy::match_wild_err_arm,
+    clippy::manual_let_else
+)]
+
 use obfusku_core::ast::{Binding, Expr, Literal, MatchArm, Module, Pattern, TypeDecl, VariantDecl};
 use obfusku_core::types::Type as CoreType;
 use obfusku_diagnostics::{Diagnostic, SourceId, Span};
-use obfusku_typecheck::{check, TypeResult};
+use obfusku_typecheck::{TypeResult, check};
+use std::rc::Rc;
 
 fn sp() -> Span {
     Span {
@@ -38,7 +46,7 @@ fn lambda(param: &str, body: Expr) -> Expr {
     Expr::Lambda {
         param: param.to_string(),
         param_ty: None,
-        body: Box::new(body),
+        body: Rc::new(body),
         span: sp(),
     }
 }
@@ -46,7 +54,7 @@ fn annotated_lambda(param: &str, ty: CoreType, body: Expr) -> Expr {
     Expr::Lambda {
         param: param.to_string(),
         param_ty: Some(ty),
-        body: Box::new(body),
+        body: Rc::new(body),
         span: sp(),
     }
 }
@@ -91,7 +99,7 @@ fn let_expr(name: &str, value: Expr, body: Expr) -> Expr {
     Expr::Let {
         name: name.to_string(),
         value: Box::new(value),
-        body: Box::new(body),
+        body: Rc::new(body),
         span: sp(),
     }
 }
@@ -99,7 +107,7 @@ fn let_expr(name: &str, value: Expr, body: Expr) -> Expr {
 fn letrec_expr(members: Vec<Binding>, body: Expr) -> Expr {
     Expr::LetRec {
         bindings: members,
-        body: Box::new(body),
+        body: Rc::new(body),
         span: sp(),
     }
 }
@@ -219,6 +227,7 @@ fn variant(tag: &str, fields: Vec<CoreType>) -> VariantDecl {
     VariantDecl {
         tag: tag.to_string(),
         fields,
+        field_names: None,
         span: sp(),
     }
 }
@@ -255,7 +264,7 @@ fn option_constructor_bindings() -> Vec<Binding> {
             value: Expr::Lambda {
                 param: "$field0".to_string(),
                 param_ty: None,
-                body: Box::new(Expr::Constructor {
+                body: Rc::new(Expr::Constructor {
                     tag: "Some".to_string(),
                     args: vec![var("$field0")],
                     span: sp(),
@@ -300,7 +309,7 @@ fn unary_constructor_binding(tag: &str) -> Binding {
         value: Expr::Lambda {
             param: "$field0".to_string(),
             param_ty: None,
-            body: Box::new(Expr::Constructor {
+            body: Rc::new(Expr::Constructor {
                 tag: tag.to_string(),
                 args: vec![var("$field0")],
                 span: sp(),
@@ -342,7 +351,7 @@ fn pctor(tag: &str, args: Vec<Pattern>) -> Pattern {
 fn arm(pattern: Pattern, result: Expr) -> MatchArm {
     MatchArm {
         pattern,
-        result,
+        result: Rc::new(result),
         span: sp(),
     }
 }
@@ -749,7 +758,7 @@ fn constructor_field_type_mismatch_is_rejected() {
         value: Expr::Lambda {
             param: "$field0".to_string(),
             param_ty: None,
-            body: Box::new(Expr::Constructor {
+            body: Rc::new(Expr::Constructor {
                 tag: "Box".to_string(),
                 args: vec![var("$field0")],
                 span: sp(),
@@ -2185,12 +2194,12 @@ fn p0_and_is_already_match_by_the_time_typecheck_sees_it_no_special_short_circui
         arms: vec![
             MatchArm {
                 pattern: Pattern::Lit(Literal::Bool(true), sp()),
-                result: expensive,
+                result: Rc::new(expensive),
                 span: sp(),
             },
             MatchArm {
                 pattern: Pattern::Lit(Literal::Bool(false), sp()),
-                result: boolean(false),
+                result: Rc::new(boolean(false)),
                 span: sp(),
             },
         ],
@@ -2303,16 +2312,18 @@ fn comparison_rejects_mixed_int_real() {
 }
 
 #[test]
-fn comparison_rejects_non_numeric_types() {
-    let ds = check_err(vec![binding(
+fn comparison_orders_strings_and_rejects_functions() {
+    let typed = check_ok(vec![binding(
         "result",
         binop(BinOp::Lt, string("a"), string("b")),
     )]);
-    assert!(
-        describe(&ds).contains("closed operator table"),
-        "{}",
-        describe(&ds)
-    );
+    assert_eq!(monomorphic_type(&typed, "result"), CoreType::Bool);
+
+    let ds = check_err(vec![binding(
+        "result",
+        binop(BinOp::Lt, lambda("x", var("x")), lambda("y", var("y"))),
+    )]);
+    assert!(describe(&ds).contains("ordering"), "{}", describe(&ds));
 }
 
 #[test]
@@ -2851,4 +2862,172 @@ fn foreign_prelude_scheme_itself_is_usable_and_still_polymorphic_after_normaliza
         .unwrap_or_else(|ds| panic!("expected success, got errors: {}", describe(&ds)));
     assert_eq!(monomorphic_type(&typed, "a"), CoreType::Int);
     assert_eq!(monomorphic_type(&typed, "b"), CoreType::Str);
+}
+
+// ---------------------------------------------------------------------
+// Generated-operation constraints (`ADR-025`) and record field typing
+// (`SEMANTIC_CORE.md` §9.3).
+// ---------------------------------------------------------------------
+
+fn binop_expr(op: obfusku_core::ast::BinOp, lhs: Expr, rhs: Expr) -> Expr {
+    Expr::BinaryOp {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+        span: sp(),
+    }
+}
+
+fn field(base: Expr, name: &str) -> Expr {
+    Expr::Field {
+        base: Box::new(base),
+        name: name.to_string(),
+        span: sp(),
+    }
+}
+
+fn update(base: Expr, fields: Vec<(&str, Expr)>) -> Expr {
+    Expr::Update {
+        base: Box::new(base),
+        fields: fields
+            .into_iter()
+            .map(|(n, e)| (n.to_string(), e))
+            .collect(),
+        span: sp(),
+    }
+}
+
+fn point_decl() -> TypeDecl {
+    type_decl(
+        "P",
+        vec![],
+        vec![VariantDecl {
+            tag: "P".to_string(),
+            fields: vec![CoreType::Int, CoreType::Int],
+            field_names: Some(vec!["x".to_string(), "y".to_string()]),
+            span: sp(),
+        }],
+    )
+}
+
+fn point(x: i64, y: i64) -> Expr {
+    Expr::Constructor {
+        tag: "P".to_string(),
+        args: vec![int(x), int(y)],
+        span: sp(),
+    }
+}
+
+fn module_with(types: Vec<TypeDecl>, bindings: Vec<Binding>) -> Module {
+    Module {
+        type_decls: types,
+        bindings: bindings
+            .into_iter()
+            .map(obfusku_core::ast::BindingGroup::Let)
+            .collect(),
+    }
+}
+
+#[test]
+fn an_ordering_use_on_a_generalized_parameter_becomes_a_scheme_constraint() {
+    use obfusku_core::ast::BinOp;
+    // λa. λb. a < b   — generic in a, needs `Ord`.
+    let typed = check_ok(vec![binding(
+        "lt",
+        lambda("a", lambda("b", binop_expr(BinOp::Lt, var("a"), var("b")))),
+    )]);
+    let b = typed.bindings.iter().find(|b| b.name == "lt").unwrap();
+    match &b.ty {
+        TypeResult::Polymorphic(scheme) => {
+            assert!(
+                scheme
+                    .constraints
+                    .iter()
+                    .any(|(_, c)| *c == obfusku_typecheck::Constraint::Ord),
+                "{scheme:?}"
+            );
+        }
+        other => panic!("expected a polymorphic binding, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_constrained_generic_is_checked_at_each_call_site() {
+    use obfusku_core::ast::BinOp;
+    let lt = lambda("a", lambda("b", binop_expr(BinOp::Lt, var("a"), var("b"))));
+    // Fine at Int and at Str.
+    check_ok(vec![
+        binding("lt", lt.clone()),
+        binding("i", apply(apply(var("lt"), int(1)), int(2))),
+        binding("s", apply(apply(var("lt"), string("a")), string("b"))),
+    ]);
+    // A function has no ordering.
+    let ds = check_err(vec![
+        binding("lt", lt),
+        binding(
+            "bad",
+            apply(
+                apply(var("lt"), lambda("x", var("x"))),
+                lambda("y", var("y")),
+            ),
+        ),
+    ]);
+    assert!(describe(&ds).contains("ordering"), "{}", describe(&ds));
+}
+
+#[test]
+fn a_let_bound_constrained_generic_works_at_two_types() {
+    use obfusku_core::ast::BinOp;
+    let body = let_expr(
+        "lt",
+        lambda("a", lambda("b", binop_expr(BinOp::Lt, var("a"), var("b")))),
+        binop_expr(
+            BinOp::Eq,
+            apply(apply(var("lt"), int(1)), int(2)),
+            apply(apply(var("lt"), string("a")), string("b")),
+        ),
+    );
+    let typed = check_ok(vec![binding("r", body)]);
+    assert_eq!(monomorphic_type(&typed, "r"), CoreType::Bool);
+}
+
+#[test]
+fn record_field_read_and_multi_field_update_are_typed() {
+    let m = module_with(
+        vec![point_decl()],
+        vec![
+            binding("p", point(1, 2)),
+            binding("q", update(var("p"), vec![("x", int(10)), ("y", int(20))])),
+            binding("r", field(var("q"), "y")),
+        ],
+    );
+    let typed = check(&m).unwrap_or_else(|ds| panic!("{}", describe(&ds)));
+    assert_eq!(monomorphic_type(&typed, "r"), CoreType::Int);
+    assert_eq!(
+        monomorphic_type(&typed, "q"),
+        CoreType::Adt("P".to_string(), vec![])
+    );
+}
+
+#[test]
+fn record_update_rejects_a_mistyped_value_and_an_unknown_field() {
+    let wrong_type = module_with(
+        vec![point_decl()],
+        vec![
+            binding("p", point(1, 2)),
+            binding("q", update(var("p"), vec![("x", string("s"))])),
+        ],
+    );
+    let ds = check(&wrong_type).err().expect("expected a type error");
+    assert!(describe(&ds).contains("field 'x'"), "{}", describe(&ds));
+
+    let unknown = module_with(
+        vec![point_decl()],
+        vec![
+            binding("p", point(1, 2)),
+            binding("q", field(var("p"), "z")),
+        ],
+    );
+    let ds = check(&unknown).err().expect("expected a type error");
+    assert!(describe(&ds).contains("'z'"), "{}", describe(&ds));
 }

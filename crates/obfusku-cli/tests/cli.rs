@@ -93,7 +93,7 @@ fn dash_dash_help_prints_usage_to_stdout_and_exits_zero() {
     // requested help is success (stdout, exit 0), not a usage error
     // (stderr, exit 2).
     let out = bin().arg("--help").output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("usage:"), "{stdout}");
     assert!(out.stderr.is_empty(), "{:?}", out.stderr);
@@ -108,7 +108,7 @@ fn dash_dash_help_short_circuits_from_any_position_after_a_subcommand() {
     // `obfusku run --help` must show help, not try to run a file
     // literally named "--help" — the near-universal GNU convention.
     let out = bin().arg("run").arg("--help").output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("usage:"), "{stdout}");
 }
@@ -116,7 +116,7 @@ fn dash_dash_help_short_circuits_from_any_position_after_a_subcommand() {
 #[test]
 fn dash_dash_version_short_circuits_from_any_position() {
     let out = bin().arg("check").arg("--version").output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains(env!("CARGO_PKG_VERSION")), "{stdout}");
 }
@@ -136,8 +136,8 @@ fn inspect_accepts_the_mode_flag_before_or_after_the_path() {
         .arg(f.path())
         .output()
         .unwrap();
-    assert!(after.status.success(), "{:?}", after);
-    assert!(before.status.success(), "{:?}", before);
+    assert!(after.status.success(), "{after:?}");
+    assert!(before.status.success(), "{before:?}");
     assert_eq!(after.stdout, before.stdout);
 }
 
@@ -174,9 +174,9 @@ fn no_command_exits_two_and_prints_usage() {
 fn run_a_well_typed_program_prints_the_result_and_exits_zero() {
     let f = write_temp("x \u{2254} 5\nresult \u{2254} x \u{271A} 1\n\u{2767}\n");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(6)"), "{stdout}");
+    assert!(stdout.contains('6'), "{stdout}");
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn duplicate_top_level_binding_reports_line_col_for_both_occurrences_never_a_byt
     // coincidence the way a same-line duplicate might.
     let f = write_temp("x \u{2254} 1\n\n\n\nx \u{2254} 2\n\u{2767}\n");
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert_eq!(out.status.code(), Some(1), "{:?}", out);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(!stderr.contains("byte"), "{stderr}");
     assert!(
@@ -233,7 +233,7 @@ fn check_a_well_typed_program_prints_ok_and_never_executes() {
     // `check` must not evaluate it, only type-check.
     let f = write_temp("result \u{2254} 1 \u{00F7} 0\n\u{2767}\n");
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("ok"), "{stdout}");
 }
@@ -252,7 +252,7 @@ fn check_an_ill_typed_program_exits_one() {
 fn uncaught_integer_overflow_is_a_clean_diagnostic_not_a_crash() {
     let f = write_temp("result \u{2254} 9223372036854775807 \u{271a} 1\n\u{2767}\n");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert_eq!(out.status.code(), Some(1), "{:?}", out);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains("IntegerOverflow"), "{stderr}");
 }
@@ -263,12 +263,12 @@ fn integer_overflow_is_catchable_by_the_existing_raise_catch_mechanism() {
         "result \u{2254} \u{260a} (9223372036854775807 \u{271a} 1) \u{3bb}(e) \u{2192} \u{27e1} e {\n  \
          IntegerOverflow \u{2192} 42\n  \u{27e2} DivisionByZero \u{2192} 0\n  \
          \u{27e2} NonExhaustiveMatch \u{2192} 0\n  \u{27e2} InvalidOperation(m) \u{2192} 0\n  \
-         \u{27e2} Failure(t, m) \u{2192} 0\n}\n\u{2767}\n",
+         \u{27e2} Failure(t, m) \u{2192} 0\n  \u{27e2} _ \u{2192} 0\n}\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(42)"), "{stdout}");
+    assert!(stdout.contains("42"), "{stdout}");
 }
 
 // ── Category-1 audit finding #18: `obfusku-typecheck` already computed
@@ -286,7 +286,7 @@ fn unreachable_arm_source() -> &'static str {
 fn check_surfaces_an_unreachable_arm_warning_but_still_reports_ok_and_exits_zero() {
     let f = write_temp(unreachable_arm_source());
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stdout.contains("ok"), "{stdout}");
@@ -295,13 +295,27 @@ fn check_surfaces_an_unreachable_arm_warning_but_still_reports_ok_and_exits_zero
 }
 
 #[test]
+fn two_arms_of_one_constructor_with_different_nested_patterns_are_not_unreachable() {
+    let f = write_temp(
+        "S \u{2254} { A(\u{27c1}) \u{27e2} B(\u{27c1}) }\n\
+         \u{3bb}f(xs: List \u{25b7} S): \u{27c1} \u{2192} \u{27e1} xs {\n  \
+         \u{2298} \u{2192} 0\n  \u{27e2} \u{205d}(A(n), t) \u{2192} n\n  \
+         \u{27e2} \u{205d}(B(n), t) \u{2192} n\n}\nresult \u{2254} f(\u{2298})\n\u{2767}\n",
+    );
+    let out = bin().arg("check").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(!stderr.contains("unreachable"), "{stderr}");
+}
+
+#[test]
 fn run_surfaces_an_unreachable_arm_warning_but_still_executes_and_exits_zero() {
     let f = write_temp(unreachable_arm_source());
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(stdout.contains("Int(5)"), "{stdout}");
+    assert!(stdout.contains('5'), "{stdout}");
     assert!(stderr.contains("unreachable"), "{stderr}");
 }
 
@@ -309,7 +323,7 @@ fn run_surfaces_an_unreachable_arm_warning_but_still_executes_and_exits_zero() {
 fn a_program_with_no_warnings_prints_nothing_to_stderr_on_check() {
     let f = write_temp("result \u{2254} 5\n\u{2767}\n");
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.is_empty(), "{stderr}");
 }
@@ -324,10 +338,10 @@ fn trailing_hole_produces_the_same_result_as_ordinary_currying() {
          result \u{2254} partial(2)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     // 1 + 2*3 = 7
-    assert!(stdout.contains("Int(7)"), "{stdout}");
+    assert!(stdout.contains('7'), "{stdout}");
 }
 
 #[test]
@@ -340,9 +354,9 @@ fn two_holes_fill_positions_left_to_right_not_reversed() {
          result \u{2254} partial(10)(1)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(-91)"), "{stdout}");
+    assert!(stdout.contains("-91"), "{stdout}");
 }
 
 #[test]
@@ -357,9 +371,9 @@ fn two_holes_on_an_arity_three_function_build_a_genuine_pending_chain() {
          result \u{2254} partial(10)(1)(1)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(8)"), "{stdout}");
+    assert!(stdout.contains('8'), "{stdout}");
 }
 
 #[test]
@@ -374,9 +388,9 @@ fn a_hole_inside_a_nested_call_belongs_to_that_call_not_the_outer_one() {
          result \u{2254} outer(5)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(35)"), "{stdout}");
+    assert!(stdout.contains("35"), "{stdout}");
 }
 
 #[test]
@@ -387,7 +401,7 @@ fn a_pipe_ref_and_a_hole_in_the_same_stage_is_a_static_error() {
          result \u{2254} xs \u{25b7} (pair(\u{25c8}, \u{2022}))\n\u{2767}\n",
     );
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert_eq!(out.status.code(), Some(1), "{:?}", out);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(
         stderr.contains('\u{25c8}') && stderr.contains('\u{2022}'),
@@ -402,7 +416,7 @@ fn too_many_arguments_without_any_holes_is_unaffected_by_this_slice() {
          result \u{2254} f(1, 2, 3)\n\u{2767}\n",
     );
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert_eq!(out.status.code(), Some(1), "{:?}", out);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
 }
 
 #[test]
@@ -413,7 +427,7 @@ fn fmt_roundtrips_a_hole_argument() {
          result \u{2254} partial(2)\n\u{2767}\n",
     );
     let out = bin().arg("fmt").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains('\u{2022}'), "{stdout}");
 }
@@ -422,7 +436,7 @@ fn fmt_roundtrips_a_hole_argument() {
 fn fmt_prints_canonically_formatted_source_and_reparses() {
     let f = write_temp("x\u{2254}1\u{271A}2\n\u{2767}\n");
     let out = bin().arg("fmt").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("\u{2254}"), "{stdout}");
     assert!(stdout.trim_end().ends_with('\u{2767}'), "{stdout}");
@@ -432,7 +446,7 @@ fn fmt_prints_canonically_formatted_source_and_reparses() {
 fn fmt_roundtrips_the_unit_literal() {
     let f = write_temp("x\u{2254}\u{2205}\n\u{2767}\n");
     let out = bin().arg("fmt").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains('\u{2205}'), "{stdout}");
 }
@@ -442,7 +456,7 @@ fn fmt_does_not_require_type_checking_to_succeed() {
     // §13: formatting ill-typed code must still work.
     let f = write_temp("result \u{2254} 1 \u{271A} \u{25C9}\n\u{2767}\n");
     let out = bin().arg("fmt").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
 }
 
 #[test]
@@ -454,7 +468,7 @@ fn inspect_tokens_prints_a_token_list() {
         .arg("--tokens")
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("Ident"), "{stdout}");
 }
@@ -468,7 +482,7 @@ fn inspect_ast_prints_the_surface_module() {
         .arg("--ast")
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("ValueDeclaration"), "{stdout}");
 }
@@ -482,7 +496,7 @@ fn inspect_core_prints_the_desugared_module() {
         .arg("--core")
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(
         stdout.contains("BindingGroup") || stdout.contains("Let"),
@@ -494,7 +508,7 @@ fn inspect_core_prints_the_desugared_module() {
 fn inspect_defaults_to_core_when_no_flag_given() {
     let f = write_temp("x \u{2254} 5\n\u{2767}\n");
     let out = bin().arg("inspect").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
 }
 
 #[test]
@@ -507,16 +521,6 @@ fn inspect_unknown_flag_exits_two() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
-}
-
-#[test]
-fn test_is_explicitly_deferred_not_silently_missing() {
-    // `build` is implemented (see `tests/project.rs`) — only `test`
-    // remains a deliberate stub here.
-    let out = bin().arg("test").output().unwrap();
-    assert_eq!(out.status.code(), Some(2));
-    let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(stderr.contains("not yet supported"), "{stderr}");
 }
 
 #[test]
@@ -543,11 +547,11 @@ fn repl_evaluates_lines_and_a_bad_line_does_not_corrupt_the_session() {
             .unwrap();
     }
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(stdout.contains("Int(5)"), "stdout: {stdout}");
-    assert!(stdout.contains("Int(6)"), "stdout: {stdout}");
+    assert!(stdout.contains('5'), "stdout: {stdout}");
+    assert!(stdout.contains('6'), "stdout: {stdout}");
     assert!(
         !stderr.is_empty(),
         "expected the bad line to report an error"
@@ -568,7 +572,7 @@ fn repl_exits_cleanly_on_eof_without_quit() {
         stdin.write_all("x \u{2254} 1\n".as_bytes()).unwrap();
     }
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
 }
 
 #[test]
@@ -603,10 +607,10 @@ fn repl_has_ambient_stdlib_and_io_but_not_filesystem_natives() {
             .unwrap();
     }
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(stdout.contains("Int(11)"), "stdout: {stdout}");
+    assert!(stdout.contains("11"), "stdout: {stdout}");
     let collisions = stderr
         .matches("already bound by the ambient prelude")
         .count();
@@ -640,7 +644,7 @@ fn repl_evaluates_each_line_exactly_once_no_effect_replay() {
             .unwrap();
     }
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(stdout.matches("once").count(), 1, "stdout: {stdout}");
 }
@@ -667,7 +671,7 @@ fn repl_shares_mutable_state_correctly_across_lines() {
             .unwrap();
     }
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("42"), "stdout: {stdout}");
 }
@@ -678,7 +682,7 @@ fn repl_shares_mutable_state_correctly_across_lines() {
 fn a_local_generic_function_reused_at_two_types_type_checks_with_the_ambient_stdlib_prelude() {
     // P0-B's original repro, through the real binary: `stdlib::load()`
     // seeds several of its own polymorphic schemes (`map`/`filter`/
-    // `\u{233D}`/`\u{2298}`/`\u{205D}`) from a completely separate `Checker` before
+    // `\u{233D}`/`⊘`/`\u{205D}`) from a completely separate `Checker` before
     // this file is ever type-checked — a local generic function must
     // still generalize and be reused at two different types despite
     // that ambient prelude being present.
@@ -689,16 +693,16 @@ fn a_local_generic_function_reused_at_two_types_type_checks_with_the_ambient_std
          result \u{2254} b\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Str(\"hi\")"), "{stdout}");
+    assert!(stdout.contains("\"hi\""), "{stdout}");
 }
 
 #[test]
 fn an_unused_local_generic_function_checks_cleanly_with_the_ambient_stdlib_prelude() {
     let f = write_temp("\u{3bb}id(x: t): t \u{2192} x\nresult \u{2254} 5\n\u{2767}\n");
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("ok"), "{stdout}");
 }
@@ -727,9 +731,9 @@ fn a_local_generic_function_still_generalizes_alongside_an_imported_generic_valu
          result \u{2254} b\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Str(\"hi\")"), "{stdout}");
+    assert!(stdout.contains("\"hi\""), "{stdout}");
 }
 
 #[test]
@@ -745,9 +749,9 @@ fn run_resolves_a_whole_module_import_and_hides_private_helpers() {
         "\u{27F2}mathutil\nresult \u{2254} publicAdd(5)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(6)"), "{stdout}");
+    assert!(stdout.contains('6'), "{stdout}");
 }
 
 #[test]
@@ -847,9 +851,9 @@ fn pattern_matching_against_a_locally_declared_adt_is_unaffected() {
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(2)"), "{stdout}");
+    assert!(stdout.contains('2'), "{stdout}");
 }
 
 #[test]
@@ -864,9 +868,9 @@ fn an_imported_constructor_can_still_be_constructed_as_a_plain_value() {
         "\u{27F2}shapes\nresult \u{2254} Circle(5)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("tag: \"Circle\""), "{stdout}");
+    assert!(stdout.contains("Circle(5)"), "{stdout}");
 }
 
 #[test]
@@ -887,9 +891,9 @@ fn pattern_matching_against_an_imported_adts_constructors_works() {
          Circle(r) \u{2192} r\n \u{27E2} Square(s) \u{2192} s\n}\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(7)"), "{stdout}");
+    assert!(stdout.contains('7'), "{stdout}");
 }
 
 #[test]
@@ -940,16 +944,16 @@ fn an_imported_generic_adt_pattern_matches_correctly_at_two_different_instantiat
          result \u{2254} b\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Str(\"hi\")"), "{stdout}");
+    assert!(stdout.contains("\"hi\""), "{stdout}");
 }
 
 #[test]
 fn stdlib_list_pattern_matching_works_without_any_local_declaration() {
-    // The exact case named as mandatory: `\u{2298}`/`\u{205D}` come from the
+    // The exact case named as mandatory: `⊘`/`\u{205D}` come from the
     // *ambient* stdlib prelude (no `⟲`, no local `List` declaration at
-    // all) — previously this failed with "unknown constructor '\u{2298}' in
+    // all) — previously this failed with "unknown constructor '⊘' in
     // pattern" despite `List<T>` being recorded as "Implemented,
     // verified end-to-end" in ROADMAP.md. That verification, in
     // hindsight, only ever exercised a *locally re-declared* `List`
@@ -957,17 +961,17 @@ fn stdlib_list_pattern_matching_works_without_any_local_declaration() {
     // via_explicit_type_application`), never the real ambient path a
     // user program actually takes — this is the test that closes that
     // coverage gap.
-    let src = "xs \u{2254} \u{205D}(1, \u{205D}(2, \u{2298}))\n\
+    let src = "xs \u{2254} \u{205D}(1, \u{205D}(2, ⊘))\n\
                result \u{2254} \u{27E1} xs {\n \
-               \u{2298} \u{2192} 0\n \u{27E2} \u{205D}(h, t) \u{2192} h\n}\n\u{2767}\n";
+               ⊘ \u{2192} 0\n \u{27E2} \u{205D}(h, t) \u{2192} h\n}\n\u{2767}\n";
     let out = bin()
         .arg("run")
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(1)"), "{stdout}");
+    assert!(stdout.contains('1'), "{stdout}");
 }
 
 #[test]
@@ -1003,9 +1007,9 @@ fn two_imports_each_declaring_their_own_unrelated_adt_do_not_collide() {
          Red \u{2192} \u{22}r\u{22}\n \u{27E2} Green \u{2192} \u{22}g\u{22}\n \u{27E2} Blue \u{2192} \u{22}b\u{22}\n}\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Str(\"g\")"), "{stdout}");
+    assert!(stdout.contains("\"g\""), "{stdout}");
 }
 
 #[test]
@@ -1025,9 +1029,9 @@ fn record_shaped_adt_self_tag_does_not_falsely_collide_with_itself() {
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(3)"), "{stdout}");
+    assert!(stdout.contains('3'), "{stdout}");
 }
 
 #[test]
@@ -1050,9 +1054,9 @@ fn an_exported_self_recursive_function_is_importable_and_callable() {
         "\u{27F2}mathutil\nresult \u{2254} factorial(5)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(120)"), "{stdout}");
+    assert!(stdout.contains("120"), "{stdout}");
 }
 
 #[test]
@@ -1068,9 +1072,9 @@ fn an_exported_generic_function_is_importable_and_reusable_at_two_types() {
         "\u{27F2}identity\na \u{2254} id(5)\nb \u{2254} id(\"hi\")\nresult \u{2254} b\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Str(\"hi\")"), "{stdout}");
+    assert!(stdout.contains("\"hi\""), "{stdout}");
 }
 
 #[test]
@@ -1109,9 +1113,9 @@ fn value_declaration_annotation_does_not_disturb_valid_inference() {
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(6)"), "{stdout}");
+    assert!(stdout.contains('6'), "{stdout}");
 }
 
 #[test]
@@ -1126,7 +1130,7 @@ fn value_declaration_annotation_composes_with_mutability_and_export_across_a_mod
     );
     let main = dir.write("main", "\u{27F2}counter\nresult \u{2254} 1\n\u{2767}\n");
     let out = bin().arg("check").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
 }
 
 #[test]
@@ -1162,9 +1166,9 @@ fn lambda_parameter_annotation_does_not_disturb_valid_inference() {
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(6)"), "{stdout}");
+    assert!(stdout.contains('6'), "{stdout}");
 }
 
 #[test]
@@ -1175,9 +1179,9 @@ fn unannotated_lambda_parameter_still_generalizes_across_two_types() {
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Str(\"hi\")"), "{stdout}");
+    assert!(stdout.contains("\"hi\""), "{stdout}");
 }
 
 #[test]
@@ -1192,9 +1196,9 @@ fn shared_type_variable_across_one_parameter_list_forces_both_arguments_equal() 
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(1)"), "{stdout}");
+    assert!(stdout.contains('1'), "{stdout}");
 
     let bad_src =
         "f \u{2254} \u{3bb}(x: t, y: t) \u{2192} x\nresult \u{2254} f(1, \"hi\")\n\u{2767}\n";
@@ -1223,9 +1227,9 @@ fn two_independent_top_level_lambdas_reusing_a_type_variable_spelling_never_unif
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Str(\"hi\")"), "{stdout}");
+    assert!(stdout.contains("\"hi\""), "{stdout}");
 }
 
 #[test]
@@ -1239,9 +1243,9 @@ fn same_spelled_type_variable_in_two_separately_written_lambdas_stays_independen
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(1)"), "{stdout}");
+    assert!(stdout.contains('1'), "{stdout}");
 }
 
 #[test]
@@ -1256,9 +1260,9 @@ fn lambda_parameter_annotation_composes_with_export_and_import() {
         "\u{27F2}util\nadd5 \u{2254} makeAdder(5)\nresult \u{2254} add5(10)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(15)"), "{stdout}");
+    assert!(stdout.contains("15"), "{stdout}");
 }
 
 #[test]
@@ -1266,7 +1270,7 @@ fn fmt_roundtrips_a_lambda_parameter_annotation() {
     let src = "result \u{2254} \u{3bb}(x: \u{27C1}, y: t) \u{2192} x\n\u{2767}\n";
     let f = write_temp(src);
     let out = bin().arg("fmt").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let formatted = String::from_utf8(out.stdout).unwrap();
     assert!(formatted.contains("x: \u{27C1}"), "{formatted}");
     assert!(formatted.contains("y: t"), "{formatted}");
@@ -1289,18 +1293,28 @@ fn non_nfc_source_file_is_a_clean_lexical_error_not_a_silent_pass() {
 }
 
 #[test]
-fn an_integer_directly_followed_by_an_exponent_suffix_is_rejected_end_to_end() {
-    // CONCRETE_SYMBOLIC_GRAMMAR.md §5: `RealLiteral`'s exponent is only
-    // reachable after the mandatory fractional part; '5e10' is not a
-    // valid literal of either kind and must not silently become a Real
-    // through a real program's actual pipeline.
-    let src = "x \u{2254} 5e10\nresult \u{2254} x\n\u{2767}\n";
+fn an_exponent_without_a_fraction_makes_a_real_literal() {
+    // `CONCRETE_SYMBOLIC_GRAMMAR.md` §5, `ADR-027`: `5e3` is a `Real`;
+    // an `e` with no digits after it stays an identifier.
+    let src = "result \u{2254} 5e3 \u{271A} 1_0.5 \u{271A} 0x10\n\u{2767}\n";
     let out = bin()
-        .arg("check")
+        .arg("run")
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "Real + Int must not mix: {out:?}"
+    );
+    let src = "result \u{2254} 5e3 \u{271A} 1_0.5\n\u{2767}\n";
+    let out = bin()
+        .arg("run")
+        .arg(write_temp(src).path())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert!(String::from_utf8(out.stdout).unwrap().contains("5010.5"));
 }
 
 #[test]
@@ -1311,9 +1325,9 @@ fn a_dotted_real_literal_with_an_exponent_is_unaffected() {
         .arg(write_temp(src).path())
         .output()
         .unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Real(50000000000.0)"), "{stdout}");
+    assert!(stdout.contains("50000000000.0"), "{stdout}");
 }
 
 // ── Stdlib (`List<T>`, `\u{27D0}`/`\u{233F}`/`\u{233D}`) as an implicit prelude —
@@ -1325,15 +1339,15 @@ fn map_is_ambiently_available_and_recurses_over_a_multi_element_list() {
     let f = write_temp(
         "\u{3bb}addOne(n: \u{27c1}): \u{27c1} \u{2192} 1 \u{271a} n\n\
          \u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         xs \u{2254} \u{205D}(1, \u{205D}(2, \u{205D}(3, \u{2298})))\n\
+         xs \u{2254} \u{205D}(1, \u{205D}(2, \u{205D}(3, ⊘)))\n\
          mapped \u{2254} \u{27D0}(addOne, xs)\n\
          result \u{2254} \u{233D}(addInts, 0, mapped)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     // (1+1) + (2+1) + (3+1) = 9
-    assert!(stdout.contains("Int(9)"), "{stdout}");
+    assert!(stdout.contains('9'), "{stdout}");
 }
 
 #[test]
@@ -1342,27 +1356,27 @@ fn filter_is_ambiently_available_and_keeps_only_matching_elements() {
         "\u{3bb}isEven(n: \u{27c1}): \u{25cb} \u{2192} \u{27e1} n \u{2317} 2 {\n  \
          0 \u{2192} \u{25c9}\n  \u{27e2} _ \u{2192} \u{25ce}\n}\n\
          \u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         xs \u{2254} \u{205D}(1, \u{205D}(2, \u{205D}(3, \u{205D}(4, \u{2298}))))\n\
+         xs \u{2254} \u{205D}(1, \u{205D}(2, \u{205D}(3, \u{205D}(4, ⊘))))\n\
          filtered \u{2254} \u{233F}(isEven, xs)\n\
          result \u{2254} \u{233D}(addInts, 0, filtered)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     // 2 + 4 = 6
-    assert!(stdout.contains("Int(6)"), "{stdout}");
+    assert!(stdout.contains('6'), "{stdout}");
 }
 
 #[test]
 fn fold_over_nil_returns_the_seed_unchanged() {
     let f = write_temp(
         "\u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         result \u{2254} \u{233D}(addInts, 0, \u{2298})\n\u{2767}\n",
+         result \u{2254} \u{233D}(addInts, 0, ⊘)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(0)"), "{stdout}");
+    assert!(stdout.contains('0'), "{stdout}");
 }
 
 #[test]
@@ -1371,24 +1385,24 @@ fn filter_over_nil_is_nil_and_folds_to_the_seed() {
         "\u{3bb}isEven(n: \u{27c1}): \u{25cb} \u{2192} \u{27e1} n \u{2317} 2 {\n  \
          0 \u{2192} \u{25c9}\n  \u{27e2} _ \u{2192} \u{25ce}\n}\n\
          \u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         result \u{2254} \u{233D}(addInts, 0, \u{233F}(isEven, \u{2298}))\n\u{2767}\n",
+         result \u{2254} \u{233D}(addInts, 0, \u{233F}(isEven, ⊘))\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(0)"), "{stdout}");
+    assert!(stdout.contains('0'), "{stdout}");
 }
 
 #[test]
 fn fold_over_a_singleton_list_applies_the_combining_function_exactly_once() {
     let f = write_temp(
         "\u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
-         result \u{2254} \u{233D}(addInts, 100, \u{205D}(7, \u{2298}))\n\u{2767}\n",
+         result \u{2254} \u{233D}(addInts, 100, \u{205D}(7, ⊘))\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(107)"), "{stdout}");
+    assert!(stdout.contains("107"), "{stdout}");
 }
 
 #[test]
@@ -1398,10 +1412,10 @@ fn fold_accumulates_strictly_left_to_right() {
     // string, so this pins down the accumulator's evaluation order.
     let f = write_temp(
         "\u{3bb}concatStr(acc: \u{2318}, s: \u{2318}): \u{2318} \u{2192} acc \u{271a} s\n\
-         result \u{2254} \u{233D}(concatStr, \u{22}seed-\u{22}, \u{205D}(\u{22}a\u{22}, \u{205D}(\u{22}b\u{22}, \u{2298})))\n\u{2767}\n",
+         result \u{2254} \u{233D}(concatStr, \u{22}seed-\u{22}, \u{205D}(\u{22}a\u{22}, \u{205D}(\u{22}b\u{22}, ⊘)))\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("seed-ab"), "{stdout}");
 }
@@ -1417,8 +1431,8 @@ fn map_is_genuinely_polymorphic_reusable_at_int_and_str_in_the_same_module() {
          \u{3bb}idStr(s: \u{2318}): \u{2318} \u{2192} s\n\
          \u{3bb}addInts(acc: \u{27c1}, n: \u{27c1}): \u{27c1} \u{2192} acc \u{271a} n\n\
          \u{3bb}concatStr(acc: \u{2318}, s: \u{2318}): \u{2318} \u{2192} acc \u{271a} s\n\
-         xsInt \u{2254} \u{205D}(1, \u{205D}(2, \u{2298}))\n\
-         xsStr \u{2254} \u{205D}(\u{22}a\u{22}, \u{205D}(\u{22}b\u{22}, \u{2298}))\n\
+         xsInt \u{2254} \u{205D}(1, \u{205D}(2, ⊘))\n\
+         xsStr \u{2254} \u{205D}(\u{22}a\u{22}, \u{205D}(\u{22}b\u{22}, ⊘))\n\
          mappedInt \u{2254} \u{27D0}(addOne, xsInt)\n\
          mappedStr \u{2254} \u{27D0}(idStr, xsStr)\n\
          sumInt \u{2254} \u{233D}(addInts, 0, mappedInt)\n\
@@ -1426,24 +1440,25 @@ fn map_is_genuinely_polymorphic_reusable_at_int_and_str_in_the_same_module() {
          result \u{2254} sumInt\n\u{2767}\n",
     );
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     // (1+1) + (2+1) = 5
-    assert!(stdout.contains("Int(5)"), "{stdout}");
+    assert!(stdout.contains('5'), "{stdout}");
 }
 
 #[test]
-fn a_local_binding_reusing_a_stdlib_name_is_a_static_error() {
-    let f = write_temp("\u{27D0} \u{2254} 5\nresult \u{2254} \u{27D0}\n\u{2767}\n");
-    let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert_eq!(out.status.code(), Some(1));
-    let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(
-        stderr.contains("already bound by the ambient prelude"),
-        "{stderr}"
-    );
+fn a_local_binding_may_shadow_a_stdlib_name_without_breaking_the_stdlib() {
+    // `ADR-028`: ambient names are replaceable per module; the stdlib's
+    // own `⌿` still calls the real `⟐`-independent code.
+    let src = "\u{27D0} \u{2254} 5\n\
+        evens \u{2254} \u{233F}(\u{3BB}(n: \u{27C1}) \u{2192} (n \u{2317} 2) \u{2261} 0, ⁝(1, ⁝(2, ⊘)))\n\
+        result \u{2254} \u{27D0}\n\u{2767}\n";
+    let f = write_temp(src);
+    let out = bin().arg("run").arg(f.path()).output().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert!(String::from_utf8(out.stdout).unwrap().contains('5'));
 }
 
 // ── Stdlib `Result<T,E>` (✓/✗) as an implicit prelude ADT — ordinary
@@ -1457,9 +1472,9 @@ fn result_ok_is_ambiently_available_and_pattern_matches() {
          result ≔ ⟡ x {\n  ✓(n) → n\n  ⟢ ✗(e) → 0 ☠︎ e\n}\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(42)"), "{stdout}");
+    assert!(stdout.contains("42"), "{stdout}");
 }
 
 #[test]
@@ -1469,7 +1484,7 @@ fn result_err_is_ambiently_available_and_pattern_matches() {
          result ≔ ⟡ x {\n  ✓(n) → \"got value\"\n  ⟢ ✗(e) → e\n}\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("oops"), "{stdout}");
 }
@@ -1487,7 +1502,7 @@ fn result_is_genuinely_polymorphic_in_both_type_parameters_independently() {
          result ≔ b\n\u{2767}\n",
     );
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
 }
 
 #[test]
@@ -1512,12 +1527,9 @@ fn array_map_transforms_every_element() {
          result ≔ ⊡(λ(x: ⟁) → x ✱ 2)(xs)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(
-        stdout.contains("Int(2)") && stdout.contains("Int(6)"),
-        "{stdout}"
-    );
+    assert!(stdout.contains('2') && stdout.contains('6'), "{stdout}");
 }
 
 #[test]
@@ -1527,10 +1539,10 @@ fn array_filter_keeps_only_matching_elements() {
          result ≔ ⊟(λ(x: ⟁) → x ⌗ 2 ≡ 0)(xs)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(
-        stdout.contains("Int(2)") && stdout.contains("Int(4)") && !stdout.contains("Int(1)"),
+        stdout.contains('2') && stdout.contains('4') && !stdout.contains('1'),
         "{stdout}"
     );
 }
@@ -1542,18 +1554,18 @@ fn array_fold_combines_left_to_right() {
          result ≔ ⊞(λ(a: ⟁) → λ(b: ⟁) → a ✚ b)(0)(xs)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(10)"), "{stdout}");
+    assert!(stdout.contains("10"), "{stdout}");
 }
 
 #[test]
 fn array_length_reports_the_element_count() {
     let f = write_temp("result ≔ #([1, 2, 3, 4, 5])\n\u{2767}\n");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(5)"), "{stdout}");
+    assert!(stdout.contains('5'), "{stdout}");
 }
 
 #[test]
@@ -1564,12 +1576,12 @@ fn array_set_is_persistent_and_does_not_mutate_the_original() {
          result ≔ xs[1] \u{271a} updated[1]\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     // xs[1] (still 2, untouched) + updated[1] (99) = 101 — if `⊙`
     // mutated `xs` in place instead of producing a new Array, this
     // would read 198 (99 + 99) instead.
-    assert!(stdout.contains("Int(101)"), "{stdout}");
+    assert!(stdout.contains("101"), "{stdout}");
 }
 
 #[test]
@@ -1582,7 +1594,7 @@ fn array_set_out_of_bounds_is_a_clear_runtime_error_not_a_crash() {
 }
 
 #[test]
-fn array_natives_are_available_in_the_repl_with_no_filesystem_root() {
+fn collection_natives_are_available_in_the_repl_with_no_filesystem_root() {
     let mut child = bin()
         .arg("repl")
         .stdin(Stdio::piped())
@@ -1597,9 +1609,9 @@ fn array_natives_are_available_in_the_repl_with_no_filesystem_root() {
             .unwrap();
     }
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(3)"), "{stdout}");
+    assert!(stdout.contains('3'), "{stdout}");
 }
 
 // ── Numeric conversion (`↗`/`↘`) — `SEMANTIC_CORE.md` §20.3. ─────────
@@ -1608,28 +1620,28 @@ fn array_natives_are_available_in_the_repl_with_no_filesystem_root() {
 fn to_real_widens_an_int_and_participates_in_real_arithmetic() {
     let f = write_temp("x ≔ 5\nresult ≔ ↗(x) ✚ 2.5\n\u{2767}\n");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Real(7.5)"), "{stdout}");
+    assert!(stdout.contains("7.5"), "{stdout}");
 }
 
 #[test]
 fn to_int_truncates_toward_zero() {
     let f = write_temp("result ≔ ↘(7.9)\n\u{2767}\n");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("Int(7)"), "{stdout}");
+    assert!(stdout.contains('7'), "{stdout}");
 }
 
 #[test]
 fn to_int_truncates_negative_fractions_toward_zero_not_down() {
     let f = write_temp("result ≔ ↘(0.0 ☠︎ 7.9)\n\u{2767}\n");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     // -7 (truncation), not -8 (floor) — proves toward-zero, not floor.
-    assert!(stdout.contains("Int(-7)"), "{stdout}");
+    assert!(stdout.contains("-7"), "{stdout}");
 }
 
 #[test]
@@ -1666,12 +1678,9 @@ fn numeric_conversion_is_available_in_the_repl() {
             .unwrap();
     }
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(
-        stdout.contains("Real(3.0)") || stdout.contains("Real(3)"),
-        "{stdout}"
-    );
+    assert!(stdout.contains("3.0") || stdout.contains('3'), "{stdout}");
 }
 
 // ── I/O: `⌁↓⌬`/`⌁↑⌬`, scoped to the entry file's own
@@ -1686,7 +1695,7 @@ fn write_then_read_a_file_within_the_entry_directory() {
          result \u{2254} ⌁↓⌬(\u{22}data.txt\u{22})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("hello from obfusku"), "{stdout}");
     assert_eq!(
@@ -1729,10 +1738,11 @@ fn a_denied_filesystem_access_is_catchable_by_the_existing_mechanism() {
         "result \u{2254} \u{260a} (⌁↓⌬(\u{22}/etc/passwd\u{22})) \u{3bb}(e) \u{2192} \u{27e1} e {\n  \
          Failure(tag, msg) \u{2192} tag\n  \u{27e2} DivisionByZero \u{2192} \u{22}div0\u{22}\n  \
          \u{27e2} NonExhaustiveMatch \u{2192} \u{22}nem\u{22}\n  \
-         \u{27e2} InvalidOperation(m) \u{2192} m\n  \u{27e2} IntegerOverflow \u{2192} \u{22}overflow\u{22}\n}\n\u{2767}\n",
+         \u{27e2} InvalidOperation(m) \u{2192} m\n  \u{27e2} IntegerOverflow \u{2192} \u{22}overflow\u{22}\n  \
+         \u{27e2} _ \u{2192} \u{22}other\u{22}\n}\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("PermissionDenied"), "{stdout}");
 }
@@ -1747,7 +1757,7 @@ fn read_file_in_a_subdirectory_of_the_entry_directory_is_permitted() {
         "result \u{2254} ⌁↓⌬(\u{22}sub/nested.txt\u{22})\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(&main).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("nested content"), "{stdout}");
 }
@@ -1805,16 +1815,11 @@ fn a_real_os_permission_error_reads_as_permission_denied_end_to_end() {
 }
 
 #[test]
-fn a_local_binding_reusing_the_read_file_name_is_a_static_error() {
+fn a_local_binding_may_shadow_the_read_file_name() {
     let dir = TempObkDir::new();
     let main = dir.write("main", "⌁↓⌬ \u{2254} 5\nresult \u{2254} ⌁↓⌬\n\u{2767}\n");
     let out = bin().arg("check").arg(&main).output().unwrap();
-    assert_eq!(out.status.code(), Some(1));
-    let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(
-        stderr.contains("already bound by the ambient prelude"),
-        "{stderr}"
-    );
+    assert!(out.status.success(), "{out:?}");
 }
 
 #[test]
@@ -1835,7 +1840,7 @@ fn read_line_reads_a_real_line_from_piped_stdin() {
         .write_all(b"hello from stdin\n")
         .unwrap();
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("hello from stdin"), "{stdout}");
 }
@@ -1846,7 +1851,8 @@ fn read_line_at_real_eof_raises_a_failure_catchable_by_the_existing_mechanism() 
         "result \u{2254} \u{260a} (⌁↓(\u{2205})) \u{3bb}(e) \u{2192} \u{27e1} e {\n  \
          Failure(tag, msg) \u{2192} tag\n  \u{27e2} DivisionByZero \u{2192} \u{22}div0\u{22}\n  \
          \u{27e2} NonExhaustiveMatch \u{2192} \u{22}nem\u{22}\n  \
-         \u{27e2} InvalidOperation(m) \u{2192} m\n  \u{27e2} IntegerOverflow \u{2192} \u{22}overflow\u{22}\n}\n\u{2767}\n",
+         \u{27e2} InvalidOperation(m) \u{2192} m\n  \u{27e2} IntegerOverflow \u{2192} \u{22}overflow\u{22}\n  \
+         \u{27e2} _ \u{2192} \u{22}other\u{22}\n}\n\u{2767}\n",
     );
     let mut child = bin()
         .arg("run")
@@ -1860,7 +1866,7 @@ fn read_line_at_real_eof_raises_a_failure_catchable_by_the_existing_mechanism() 
     // EOF on the child's stdin.
     drop(child.stdin.take());
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("EOF"), "{stdout}");
 }
@@ -1891,11 +1897,11 @@ fn read_line_uncaught_eof_is_an_uncaught_exception_not_a_crash() {
 fn print_writes_to_real_stdout_through_the_compiled_binary() {
     let f = write_temp("result \u{2254} ⌁↑(\u{22}hello from native ⌁↑\u{22})\n\u{2767}\n");
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert!(stdout.contains("hello from native ⌁↑"), "{stdout}");
-    // ⌁↑ : Str -> Unit
-    assert!(stdout.contains("Unit"), "{stdout}");
+    // ⌁↑ : Str -> Unit, rendered as `∅`.
+    assert!(stdout.contains("∅"), "{stdout}");
 }
 
 #[test]
@@ -1905,11 +1911,11 @@ fn print_composes_with_an_ordinary_function_and_stdlib_map() {
     // first-class function at every call site, not special-cased.
     let f = write_temp(
         "\u{3bb}announce(n: \u{27c1}): \u{2205} \u{2192} ⌁↑(\u{22}got a number\u{22})\n\
-         xs \u{2254} \u{205D}(1, \u{205D}(2, \u{2298}))\n\
+         xs \u{2254} \u{205D}(1, \u{205D}(2, ⊘))\n\
          result \u{2254} \u{27D0}(announce, xs)\n\u{2767}\n",
     );
     let out = bin().arg("run").arg(f.path()).output().unwrap();
-    assert!(out.status.success(), "{:?}", out);
+    assert!(out.status.success(), "{out:?}");
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(stdout.matches("got a number").count(), 2, "{stdout}");
 }
@@ -1924,15 +1930,10 @@ fn calling_print_with_a_non_str_argument_is_a_static_type_error_not_a_runtime_cr
 }
 
 #[test]
-fn a_local_binding_reusing_the_print_name_is_a_static_error() {
+fn a_local_binding_may_shadow_the_print_name() {
     let f = write_temp("⌁↑ \u{2254} 5\nresult \u{2254} ⌁↑\n\u{2767}\n");
     let out = bin().arg("check").arg(f.path()).output().unwrap();
-    assert_eq!(out.status.code(), Some(1));
-    let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(
-        stderr.contains("already bound by the ambient prelude"),
-        "{stderr}"
-    );
+    assert!(out.status.success(), "{out:?}");
 }
 
 #[test]

@@ -514,7 +514,57 @@ different role from its old one, not a restoration.
 ⌁↓ : ∅ → ⌘         -- readLine   (read from console)
 ⌁↓⌬ : ⌘ → ⌘         -- readFile   (read a file, path in, content out)
 ⌁↑⌬ : ⌘ → (⌘ → ∅)   -- writeFile  (write a file, curried path then content)
+⌁↓⌂ : ⌘ → List<⌘>   -- listDir   (entry names, ADR-024)
+⌁↑⌂ : ⌘ → ∅         -- mkdir     (with parents, ADR-024)
+⌁⍰⌬ : ⌘ → ○         -- exists    (file or directory, ADR-024)
+⌁⍰⌂ : ⌘ → ○         -- isDir     (ADR-024)
+⌁↓⌭ : ⌘ → ⌭         -- readBytes (ADR-024, ADR-027)
+⌁↑⌭ : ⌘ → ⌭ → ∅      -- writeBytes (ADR-024, ADR-027)
+⌁↑⎙ : ⌘ → ∅         -- write     (no newline, flushed, ADR-027)
+⌁↓⎙ : ∅ → ⌘         -- readAll   (stdin to end, ADR-027)
+⌁⍰⎙ : ∅ → ○         -- atEnd     (stdin exhausted, ADR-027)
+⌁↑⎚ : ⌭ → ∅         -- write bytes to stdout (ADR-027)
+⌁↓⎚ : ∅ → ⌭         -- read all of stdin as bytes (ADR-027)
+⌁⍰⌖ : ∅ → ○         -- stdout is a terminal (ADR-027)
+⌁↓⧗ : ∅ → ⟁         -- wall clock, ms since the Unix epoch (ADR-027)
+⌁↓⧖ : ∅ → ⟁         -- monotonic clock, ns, differences only (ADR-027)
+⌁↑⧗ : ⟁ → ∅         -- sleep, ms (ADR-027)
+⌁↓⚀ : ⟁ → ⟁         -- random Int in 0..n (ADR-027)
+⌁↓⚁ : ∅ → ⧆         -- random Real in [0, 1) (ADR-027)
+⌁⊕⌬ : ⌘ → ⌘ → ∅     -- append file (ADR-027)
+⌁⊖⌬ : ⌘ → ∅         -- remove file (ADR-027)
+⌁⊖⌂ : ⌘ → ∅         -- remove directory tree (ADR-027)
+⌁⇄⌬ : ⌘ → ⌘ → ∅     -- move (ADR-027)
+⌁⧉⌬ : ⌘ → ⌘ → ∅     -- copy file (ADR-027)
+⌁⍰⌭ : ⌘ → ⟁         -- size in bytes (ADR-027)
+⌁⍰⧗ : ⌘ → ⟁         -- modification time, ms since epoch (ADR-027)
+⌁↑⍉ : ⌘ → ∅         -- eprint    (emit to the error stream, ADR-023)
+⌁↯ : ⟁ → a          -- exit      (terminate, code 0..=255, ADR-023)
+⌁↓⌥ : ∅ → List<⌘>   -- arguments (program arguments, ADR-022)
+⌁↓⎈ : ⌘ → Optional<⌘> -- env      (environment variable by name, ADR-022)
 ```
+
+`⌥` (program arguments) and `⎈` (environment) are further medium marks
+on the read direction, alongside `⌬` (file); `⍉` (error stream) is a
+medium mark on the emit direction, and `↯` (terminate) a third direction.
+
+`⌂` (directory) and `⌭` (bytes) are further medium marks, and `⍰` (query)
+a fourth direction (ADR-024). `⚑` classifies arguments into `⌑`: `➤(name, Optional<Str>)` for a flag, `◇(word)` for a positional. The names are glyphs so they cannot collide with a program's own types.
+`☈` introduces a user-declared exception variant (ADR-026).
+
+ADR-027 adds direction marks `⊕` (append) `⊖` (remove) `⇄` (move) `⧉`
+(copy) and media `⎙` (text stream) `⎚` (byte stream) `⌖` (terminal) `⧗`
+(wall clock) `⧖` (monotonic clock) `⚀`/`⚁` (integer/real dice).
+
+Numbers (ADR-027): `Int` `∥` abs, `⋆` pow, `⊓ ⊔ ⊗ ∼` bitwise, `⋘ ⋙`
+shifts; `⊥`/`⊤` min/max for any ordered type; `Real` `√ ⌊ ⌃ ⌾ ℯ ℓ ∿ ∾ ∦
+⋇ ∠ ⍥` and constants `ϖ ∞`. Text: `⇧ ⇩ ⊢ ⊣ ⍸ ⤳ ⌯ ⌮ ⍂ ⌶`. Bytes: type
+`⌭`, operations spelled `⌭` + the twin glyph (`⌭# ⌭⌷ ⌭⍪ ⌭⊠ ⌭⌕ ⌭⇋ ⌭⇌ ⌭⌘
+⌭⍕`).
+
+`Str` natives (ADR-023): `⫽` split, `⫴` join, `⌫` trim, `∋` contains,
+`⍴` length, `⊏` slice, `↦`/`⇝` parse Int/Real; `⍕` renders any value
+(§10.7).
 
 **Inference test:** a learner who has only seen `⌁↑` (print) and `⌁↓`
 (readLine) can correctly predict that `⌁↓⌬` reads *from a file* and
@@ -617,12 +667,10 @@ Optional:  ⧫ / ⦰   — presence / absence
 Result:    ✓ / ✗   — successful outcome / failed outcome
 ```
 
-**No combinators in this pass, deliberately.** Construction plus
-pattern matching is the entire 1.0 surface — the same minimal slice
-already shipped for `Optional`. A `map`/`andThen`/`unwrapOr`-style
-vocabulary is left for a later, separate decision once the type itself
-has shipped; not deciding it now keeps this addition symmetric with
-`Optional`'s own precedent rather than growing the two inconsistently.
+**Combinators.** Construction and pattern matching are the base surface,
+the same as for `Optional`; a `map`/`andThen`/`unwrapOr`-style vocabulary
+for `Optional` and `Result` is a library-content decision recorded in
+`docs/ROADMAP.md`, to be made for both types together so they stay symmetric.
 
 ## 10.5 `Array<T>` combinators — two families, not one flat list
 
@@ -695,10 +743,9 @@ unrelated to `Cell<T>`'s mutation mechanism (`⚙︎`), which this section
 does not touch. `get` is deliberately not added: `IndexExpr` (`arr[i]`,
 already shipped, `SEMANTIC_CORE.md` §9.2) already is read access:
 naming a second function for the same operation would duplicate
-surface without adding expressiveness. `append`/`push`/`concat`/
-`slice` are out of scope for the same reason `SEMANTIC_CORE.md` §9.2's
-own "not covered by this slice" list never named them — they are not
-implied by "combinators," they would be a separate, later decision.
+surface without adding expressiveness. Construction and combination
+(`push`, `concat`, `slice`, `range`, `replicate`, `sort`) are specified in
+§10.7.
 
 Because `Array` combinators cannot be hand-written in `.obk` source the
 way `List`'s were (§9.1 rules out structural destructuring against
@@ -745,6 +792,55 @@ fourth conversion (`String↔Int`, a rounding-mode axis, etc.) is implied
 by this pair, and none is added here.
 
 ---
+
+## 10.7 Collections — array construction, `Map`, `Set`, rendering (`ADR-025`)
+
+Every glyph here is an ordinary single-symbol name, curried, host-provided,
+and persistent (it returns a new value and never mutates its argument).
+
+```
+Array     ⊕ push        Array<t> → t → Array<t>
+          ⍪ concat      Array<t> → Array<t> → Array<t>
+          ⌷ slice       Int → Int → Array<t> → Array<t>     start, length; clamped
+          ⍳ range       Int → Array<Int>                    0 … n-1
+          ⊠ replicate   Int → t → Array<t>
+          ⍋ sort        Array<t> → Array<t>                 Ord t, stable
+          ⇋ fromList    List<t> → Array<t>
+          ⇌ toList      Array<t> → List<t>
+
+Map       ⍬ empty       Map<k, v>
+          ⊎ insert      Map<k, v> → k → v → Map<k, v>       Ord k, replaces
+          ⊖ remove      Map<k, v> → k → Map<k, v>           Ord k
+          ⌕ lookup      Map<k, v> → k → Optional<v>         Ord k
+          ⊛ size        Map<k, v> → Int
+          ⌸ keys        Map<k, v> → List<k>                 ascending
+          ⌹ values      Map<k, v> → List<v>                 by key
+
+Set       ⍭ empty       Set<k>
+          ⊌ insert      Set<k> → k → Set<k>                 Ord k
+          ⊝ remove      Set<k> → k → Set<k>                 Ord k
+          ∈ member      Set<k> → k → Bool                   Ord k
+          ⊚ size        Set<k> → Int
+          ⌻ elements    Set<k> → List<k>                    ascending
+
+⍕ render   t → Str                                          Show t
+```
+
+**Grounding.** The set-theoretic operators carry their familiar roles
+(`∈` membership; `⊎`/`⊌` union-with-one, `⊖`/`⊝` difference-with-one;
+`⊛`/`⊚` a counted container); `⍳` (range), `⍪` (catenate), `⌷` (index
+into), `⍋` (grade up) and `⍴` (shape) come from the array-language
+tradition and keep their meaning there. `⊕`/`⊠` extend the squared
+operator family of §10.5 (push is "plus one", replicate is "times n").
+
+**Why separate glyphs for `Map` and `Set`.** Obfusku has no overloading
+by user-defined classes (`SEMANTIC_CORE.md` §20.2), so one name cannot
+dispatch on the container type; the two containers share a representation
+and a vocabulary of roles instead.
+
+**Constraints.** `Ord k`, `Show t` and the equality of `≡` are the three
+generated operations (`SEMANTIC_CORE.md` §18, §18.1): satisfied by every
+type without a function-typed part, rejected statically otherwise.
 
 ## 11. Reserved/invalid combinations — consolidated
 

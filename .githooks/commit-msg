@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# commit-msg: blocks a commit whose subject is not a Conventional Commits message.
+set -euo pipefail
+exec "$(git rev-parse --show-toplevel)/scripts/check-commit-message.sh" "$1"

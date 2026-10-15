@@ -80,9 +80,14 @@ Named explicitly, so absence is never mistaken for an implied answer:
   implemented as host natives (§10.5, `ADR-021`). `Cell` needed none
   either — a first-class `Type::Cell` variant, not an `AdtRegistry`
   entry. `Int↔Real` conversion (`↗`/`↘`, `SEMANTIC_CORE.md` §20.3) is
-  also implemented. No canon stdlib surface remains undecided; further
-  additions (a second collection type, more conversions, and so on)
-  are new library-content questions, not gaps in what's named here.
+  also implemented. The collection surface is `List`, `Array`, `Map`
+  and `Set` with generated ordering and rendering (`ADR-025`,
+  `GLYPH_SYSTEM_DESIGN.md` §10.7), text and number conversion natives
+  (`ADR-023`), the host-effect family (`ADR-022`–`ADR-024`, `ADR-027`),
+  and the numeric library, `Str` functions and `⌭` bytes (`ADR-027`).
+  Ambient value names are shadowable per module (`ADR-028`). What the
+  standard library still lacks is tracked as open work in `docs/ROADMAP.md`,
+  not as an implied non-goal.
 - **Module/artifact/distribution model — resolved.**
   `ADR-017` defines an Obfusku Project (a directory rooted at a
   discovered project marker, with a bare `.obk` file remaining valid as
@@ -97,9 +102,8 @@ Named explicitly, so absence is never mistaken for an implied answer:
   open: any metadata the manifest might carry beyond `ADR-020`'s fields
   (dependency identity, versioning beyond `format`), external-Project
   dependency resolution, packaging/archive format for a distributed
-  artifact, and `test`'s implementation — it needs a language-level
-  testing construct that does not exist yet and is deliberately not
-  invented as a CLI-level naming convention. `build` is
+  artifact. `test` runs a Project's test files as ordinary programs
+  (`ADR-030`); a dedicated assertion construct remains open. `build` is
   implemented: it requires a real Project (no bare-file fallback,
   unlike `run`/`check`) and certifies the entry module's whole
   reachable import graph as a valid, distributable Source Artifact
@@ -153,7 +157,8 @@ and clearer.
 §9.1 deliberately excludes `Array` from structural pattern matching, so
 `⊡`/`⊟`/`⊞` (or, for a shape none of the three fit, an index-driven
 helper function using `#` and `arr[i]` with a base case at
-`i ≡ #(arr)`) are the *only* ways to consume one. This is not a gap
+`i ≡ #(arr)`) are the ways to consume one; `⍳`, `⊕`, `⍪` and `⌷` build and
+reshape arrays, and `⇌`/`⇋` convert to and from `List`. This is not a gap
 this section fills — it is `Array`'s own settled semantics
 (`GLYPH_SYSTEM_DESIGN.md` §10.5), repeated here only so the choice
 between `List` and `Array` includes it: **reach for `Array` when O(1)
@@ -162,12 +167,11 @@ traversal is naturally inductive (`Cons`/`Nil`-shaped) and positional
 access does not come up.** Neither is a general-purpose default the
 other should be reached for out of habit.
 
-**Nothing new is introduced by this section** — no `zip`, no `range`,
-no general loop sugar, no additional combinator beyond `List`'s three
-and `Array`'s five already-canon ones. A future gap found while
-following this guidance (a shape common enough to deserve its own
-combinator) is a separate, later stdlib-content decision, not an
-implicit extension of this one.
+**This section changes no rule.** It does not add a loop construct (the
+language has none by design, `GLYPH_SYSTEM_DESIGN.md` §7.2) or any
+combinator. A shape that follows this guidance and keeps recurring —
+`zip`, `take`, `any`/`all`, `Optional`/`Result` combinators — is library
+work tracked in `docs/ROADMAP.md`.
 
 ---
 

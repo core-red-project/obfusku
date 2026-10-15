@@ -13,6 +13,10 @@ use std::collections::HashMap;
 pub struct AdtInfo {
     pub variants: Vec<String>,
     pub type_params: Vec<String>,
+    /// An open type can gain variants in modules this one never sees, so
+    /// a match over it is exhaustive only with a wildcard or variable
+    /// arm (`Exception`, `ADR-026`).
+    pub open: bool,
 }
 
 /// Which ADT a constructor belongs to, its type parameters, and its
@@ -23,12 +27,16 @@ pub struct VariantInfo {
     pub adt_name: String,
     pub type_params: Vec<String>,
     pub field_types: Vec<CoreType>,
+    /// Declared field names, for a record's single variant.
+    pub field_names: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default)]
 pub struct AdtRegistry {
     pub adts: HashMap<String, AdtInfo>,
     pub variants: HashMap<String, VariantInfo>,
+    /// Record field name → the constructor tags that declare it.
+    pub field_owners: HashMap<String, Vec<String>>,
 }
 
 impl AdtRegistry {
@@ -50,24 +58,36 @@ impl AdtRegistry {
                     "IntegerOverflow".to_string(),
                 ],
                 type_params: vec![],
+                open: true,
             },
         );
-        // `Array<T>` (§9.2): registered with no variants (constructed
-        // via `Expr::ArrayLiteral`, never `Expr::Constructor`) so
-        // `check_type_arity` can validate its annotations too.
-        adts.insert(
-            "Array".to_string(),
-            AdtInfo {
-                variants: vec![],
-                type_params: vec!["t".to_string()],
-            },
-        );
+        // `Array<T>` (§9.2), `Map<K, V>` and `Set<K>` (`ADR-025`):
+        // registered with no variants (never built by
+        // `Expr::Constructor`) so `check_type_arity` validates their
+        // annotations too.
+        // `⌭` (bytes, `ADR-027`) is the one non-generic container.
+        for (name, params) in [
+            ("Array", vec!["t"]),
+            ("Map", vec!["k", "v"]),
+            ("Set", vec!["k"]),
+            ("⌭", vec![]),
+        ] {
+            adts.insert(
+                name.to_string(),
+                AdtInfo {
+                    variants: vec![],
+                    type_params: params.into_iter().map(String::from).collect(),
+                    open: false,
+                },
+            );
+        }
         variants.insert(
             "DivisionByZero".to_string(),
             VariantInfo {
                 adt_name: "Exception".to_string(),
                 type_params: vec![],
                 field_types: vec![],
+                field_names: None,
             },
         );
         // §20.2: any `Int` arithmetic result outside `i64`'s
@@ -81,6 +101,7 @@ impl AdtRegistry {
                 adt_name: "Exception".to_string(),
                 type_params: vec![],
                 field_types: vec![],
+                field_names: None,
             },
         );
         variants.insert(
@@ -89,6 +110,7 @@ impl AdtRegistry {
                 adt_name: "Exception".to_string(),
                 type_params: vec![],
                 field_types: vec![],
+                field_names: None,
             },
         );
         variants.insert(
@@ -97,6 +119,7 @@ impl AdtRegistry {
                 adt_name: "Exception".to_string(),
                 type_params: vec![],
                 field_types: vec![CoreType::Str],
+                field_names: None,
             },
         );
         variants.insert(
@@ -105,26 +128,38 @@ impl AdtRegistry {
                 adt_name: "Exception".to_string(),
                 type_params: vec![],
                 field_types: vec![CoreType::Str, CoreType::Str],
+                field_names: None,
             },
         );
 
+        let mut field_owners: HashMap<String, Vec<String>> = HashMap::new();
         for td in type_decls {
-            adts.insert(
-                td.tag.clone(),
-                AdtInfo {
-                    variants: td.variants.iter().map(|v| v.tag.clone()).collect(),
-                    type_params: td.type_params.clone(),
-                },
-            );
+            // A declaration of `Exception` extends the built-in type
+            // (`ADR-026`); any other name introduces a new one.
+            let info = adts.entry(td.tag.clone()).or_insert_with(|| AdtInfo {
+                variants: Vec::new(),
+                type_params: td.type_params.clone(),
+                open: false,
+            });
             for v in &td.variants {
+                if !info.variants.contains(&v.tag) {
+                    info.variants.push(v.tag.clone());
+                }
                 variants.insert(
                     v.tag.clone(),
                     VariantInfo {
                         adt_name: td.tag.clone(),
                         type_params: td.type_params.clone(),
                         field_types: v.fields.clone(),
+                        field_names: v.field_names.clone(),
                     },
                 );
+                for name in v.field_names.iter().flatten() {
+                    field_owners
+                        .entry(name.clone())
+                        .or_default()
+                        .push(v.tag.clone());
+                }
             }
         }
 
@@ -141,7 +176,11 @@ impl AdtRegistry {
             return Err(errors);
         }
 
-        Ok(AdtRegistry { adts, variants })
+        Ok(AdtRegistry {
+            adts,
+            variants,
+            field_owners,
+        })
     }
 }
 
@@ -190,20 +229,20 @@ pub(crate) fn check_type_arity(
         }
         CoreType::Cell(t) => check_type_arity(t, adts, span, errors),
         CoreType::Adt(name, args) => {
-            if let Some(info) = adts.get(name) {
-                if args.len() != info.type_params.len() {
-                    errors.push(Diagnostic {
-                        severity: Severity::Error,
-                        message: format!(
-                            "'{name}' expects {} type argument(s), found {} — a bare '{name}' \
+            if let Some(info) = adts.get(name)
+                && args.len() != info.type_params.len()
+            {
+                errors.push(Diagnostic {
+                    severity: Severity::Error,
+                    message: format!(
+                        "'{name}' expects {} type argument(s), found {} — a bare '{name}' \
                              never implicitly supplies its enclosing type's own parameters; \
                              write the explicit type argument(s) (e.g. '{name} ▷ t')",
-                            info.type_params.len(),
-                            args.len()
-                        ),
-                        primary: span,
-                    });
-                }
+                        info.type_params.len(),
+                        args.len()
+                    ),
+                    primary: span,
+                });
             }
             for a in args {
                 check_type_arity(a, adts, span, errors);

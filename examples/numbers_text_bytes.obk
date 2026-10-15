@@ -1,0 +1,20 @@
+// ═══════════════════════════════════════════════════════════════
+// Numbers, text and bytes
+// Demonstrates: radix and separated literals, the Int/Real
+// libraries, scalar versus grapheme views of a Str, and ⌭ bytes.
+// ═══════════════════════════════════════════════════════════════
+
+mask ≔ ⊓(0xFF)(0b1010_1010)
+scaled ≔ ⋘(1)(10) ✚ ⋆(2)(8)
+hypot ≔ √(⋇(3.0)(2.0) ✚ ⋇(4.0)(2.0))
+
+// "e" + combining acute is two scalars but one grapheme.
+word ≔ "e\u{301}👍"
+scalars ≔ #(⇋(⍂(word)))
+graphemes ≔ #(⇋(⌶(word)))
+
+packed ≔ ⌭⍪(⌭⌘("obk"))(⌭⇋([0, 255]))
+decoded ≔ ⌭⍕(⌭⌷(0)(3)(packed))
+
+result ≔ mask ✚ scaled ✚ ↘(hypot) ✚ scalars ✚ graphemes ✚ ⌭#(packed)
+❧

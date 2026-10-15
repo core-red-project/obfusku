@@ -33,14 +33,35 @@ $LspUrl = "$BaseUrl/obfusku-lsp-windows-x86_64.exe"
 $CliTarget = Join-Path $InstallDir "obfusku.exe"
 $LspTarget = Join-Path $InstallDir "obfusku-lsp.exe"
 
+# Verifies $File against the release's SHA256SUMS entry for $Name.
+function Assert-Checksum([string]$File, [string]$Name) {
+    $SumsPath = Join-Path ([IO.Path]::GetTempPath()) "obfusku-SHA256SUMS"
+    Invoke-WebRequest -Uri "$BaseUrl/SHA256SUMS" -OutFile $SumsPath -UseBasicParsing
+    $Line = Get-Content $SumsPath | Where-Object { ($_ -split "\s+")[1] -eq $Name -or ($_ -split "\s+")[1] -eq "*$Name" } | Select-Object -First 1
+    Remove-Item $SumsPath -Force -ErrorAction SilentlyContinue
+    if (-not $Line) { throw "No checksum listed for $Name in SHA256SUMS." }
+    $Expected = ($Line -split "\s+")[0].ToLowerInvariant()
+    $Actual = (Get-FileHash -Algorithm SHA256 -Path $File).Hash.ToLowerInvariant()
+    if ($Expected -ne $Actual) {
+        Remove-Item $File -Force -ErrorAction SilentlyContinue
+        throw "Checksum mismatch for $Name (expected $Expected, got $Actual)."
+    }
+}
+
 Write-Host "==> Downloading obfusku CLI from $CliUrl..." -ForegroundColor Cyan
 Invoke-WebRequest -Uri $CliUrl -OutFile $CliTarget -UseBasicParsing
+Assert-Checksum $CliTarget "obfusku-windows-x86_64.exe"
 
 Write-Host "==> Downloading obfusku-lsp from $LspUrl..." -ForegroundColor Cyan
+$LspDownloaded = $false
 try {
     Invoke-WebRequest -Uri $LspUrl -OutFile $LspTarget -UseBasicParsing
+    $LspDownloaded = $true
 } catch {
     Write-Warning "Could not download obfusku-lsp (optional). Continuing with CLI only."
+}
+if ($LspDownloaded) {
+    Assert-Checksum $LspTarget "obfusku-lsp-windows-x86_64.exe"
 }
 
 # Update User PATH if needed

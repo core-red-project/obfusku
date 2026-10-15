@@ -13,6 +13,92 @@ use obfusku_typecheck::{Prelude, Scheme, TypeResult};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+/// Where module text comes from: the filesystem, or a bundle's embedded
+/// sources (`ADR-022`) keyed by virtual path.
+#[derive(Clone, Copy, Default)]
+pub enum ModuleSource<'a> {
+    #[default]
+    Disk,
+    Memory(&'a HashMap<PathBuf, String>),
+}
+
+impl ModuleSource<'_> {
+    /// `skip` names directories that are not searched (hidden ones never
+    /// are): a dependency's tests and examples.
+    fn find(self, root: &Path, name: &str, skip: &[&str]) -> ModuleSearch {
+        match self {
+            ModuleSource::Disk => project::find_module_skipping(root, name, skip),
+            ModuleSource::Memory(files) => {
+                let visible = |p: &Path| {
+                    p.strip_prefix(root).is_ok_and(|rel| {
+                        let dirs = rel.parent().into_iter().flat_map(Path::components);
+                        dirs.map(|c| c.as_os_str().to_string_lossy().into_owned())
+                            .all(|c| !c.starts_with('.') && !skip.contains(&c.as_str()))
+                    })
+                };
+                let mut matches: Vec<PathBuf> = files
+                    .keys()
+                    .filter(|p| visible(p) && p.file_stem().is_some_and(|s| s == name))
+                    .cloned()
+                    .collect();
+                matches.sort();
+                match matches.len() {
+                    0 => ModuleSearch::NotFound,
+                    1 => ModuleSearch::Found(matches.remove(0)),
+                    _ => ModuleSearch::Ambiguous(matches),
+                }
+            }
+        }
+    }
+
+    pub(crate) fn read(self, path: &Path) -> std::io::Result<String> {
+        match self {
+            ModuleSource::Disk => std::fs::read_to_string(path),
+            ModuleSource::Memory(files) => files
+                .get(path)
+                .cloned()
+                .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound)),
+        }
+    }
+
+    fn canonical(self, path: &Path) -> std::io::Result<PathBuf> {
+        match self {
+            ModuleSource::Disk => path.canonicalize(),
+            ModuleSource::Memory(files) if files.contains_key(path) => Ok(path.to_path_buf()),
+            ModuleSource::Memory(_) => Err(std::io::ErrorKind::NotFound.into()),
+        }
+    }
+}
+
+/// The names every module sees without importing: the stdlib, natives and
+/// the type declarations behind them.
+#[derive(Clone, Default)]
+pub struct Ambient {
+    pub types: Prelude,
+    pub values: HashMap<String, Value>,
+    pub type_decls: Vec<obfusku_core::ast::TypeDecl>,
+    /// Which package each import is searched in (`ADR-029`).
+    pub packages: std::rc::Rc<crate::deps::Packages>,
+}
+
+impl Ambient {
+    /// Ambient value names a module may redefine locally (`ADR-028`):
+    /// not re-bound by one of its imports, and not a constructor.
+    #[must_use]
+    pub fn shadowable(&self, imported: &Prelude) -> HashSet<String> {
+        let constructors: HashSet<&str> = self
+            .type_decls
+            .iter()
+            .flat_map(|td| td.variants.iter().map(|v| v.tag.as_str()))
+            .collect();
+        self.types
+            .keys()
+            .filter(|n| !imported.contains_key(*n) && !constructors.contains(n.as_str()))
+            .cloned()
+            .collect()
+    }
+}
+
 /// A fully resolved module's exported surface — what an importer sees.
 #[derive(Clone, Default)]
 pub struct ResolvedModule {
@@ -23,7 +109,7 @@ pub struct ResolvedModule {
     pub type_decls: Vec<obfusku_core::ast::TypeDecl>,
 }
 
-fn io_error(path: &Path, e: std::io::Error) -> Diagnostic {
+fn io_error(path: &Path, e: &std::io::Error) -> Diagnostic {
     Diagnostic {
         severity: Severity::Error,
         message: format!("could not read imported module '{}': {e}", path.display()),
@@ -87,6 +173,43 @@ fn collision_error(name: &str, span: Span) -> Diagnostic {
     }
 }
 
+/// A module is looked up in its own package first; only when it is absent
+/// there are the package's direct dependencies searched, and two
+/// dependencies offering the same name are ambiguous. Returns the root of
+/// the package the module belongs to, which scopes its own imports.
+fn search_packages(
+    sources: ModuleSource,
+    root: &Path,
+    name: &str,
+    packages: &crate::deps::Packages,
+) -> (ModuleSearch, PathBuf) {
+    match sources.find(root, name, &[]) {
+        ModuleSearch::NotFound => {}
+        found => return (found, root.to_path_buf()),
+    }
+    let mut hits: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for dep_root in packages.dependency_roots(root) {
+        match sources.find(dep_root, name, &crate::deps::AUXILIARY_DIRS) {
+            ModuleSearch::Found(path) => hits.push((path, dep_root.clone())),
+            ModuleSearch::Ambiguous(paths) => {
+                return (ModuleSearch::Ambiguous(paths), dep_root.clone());
+            }
+            ModuleSearch::NotFound => {}
+        }
+    }
+    match hits.len() {
+        0 => (ModuleSearch::NotFound, root.to_path_buf()),
+        1 => {
+            let (path, owner) = hits.remove(0);
+            (ModuleSearch::Found(path), owner)
+        }
+        _ => (
+            ModuleSearch::Ambiguous(hits.into_iter().map(|(p, _)| p).collect()),
+            root.to_path_buf(),
+        ),
+    }
+}
+
 /// Resolves `surface`'s `ImportDeclaration`s, returning imported types,
 /// values, and type declarations. Caches modules by canonical path to
 /// ensure each module is resolved once. `project_root` is the boundary
@@ -96,6 +219,8 @@ fn collision_error(name: &str, span: Span) -> Diagnostic {
 pub fn resolve_imports(
     surface: &obfusku_syntax::ast::Module,
     project_root: &Path,
+    sources: ModuleSource,
+    ambient: &Ambient,
     source_map: &mut SourceMap,
     cache: &mut HashMap<PathBuf, ResolvedModule>,
     resolving: &mut HashSet<PathBuf>,
@@ -116,7 +241,13 @@ pub fn resolve_imports(
         let Declaration::Import(import) = decl else {
             continue;
         };
-        let imported_path = match project::find_module(project_root, &import.module_name) {
+        let (found, owner_root) = search_packages(
+            sources,
+            project_root,
+            &import.module_name,
+            &ambient.packages,
+        );
+        let imported_path = match found {
             ModuleSearch::Found(path) => path,
             ModuleSearch::NotFound => {
                 errors.push(not_found_error(&import.module_name, import.span));
@@ -127,7 +258,15 @@ pub fn resolve_imports(
                 continue;
             }
         };
-        match resolve_module(&imported_path, project_root, source_map, cache, resolving) {
+        match resolve_module(
+            &imported_path,
+            &owner_root,
+            sources,
+            ambient,
+            source_map,
+            cache,
+            resolving,
+        ) {
             Ok(resolved) => {
                 for (name, scheme) in &resolved.types {
                     if types.contains_key(name) {
@@ -161,11 +300,15 @@ pub fn resolve_imports(
 pub fn resolve_module(
     path: &Path,
     project_root: &Path,
+    sources: ModuleSource,
+    ambient: &Ambient,
     source_map: &mut SourceMap,
     cache: &mut HashMap<PathBuf, ResolvedModule>,
     resolving: &mut HashSet<PathBuf>,
 ) -> Result<ResolvedModule, Vec<Diagnostic>> {
-    let canonical = path.canonicalize().map_err(|e| vec![io_error(path, e)])?;
+    let canonical = sources
+        .canonical(path)
+        .map_err(|e| vec![io_error(path, &e)])?;
     if let Some(cached) = cache.get(&canonical) {
         return Ok(cached.clone());
     }
@@ -173,7 +316,15 @@ pub fn resolve_module(
         return Err(vec![circular_import_error(path)]);
     }
 
-    let result = resolve_module_uncached(path, project_root, source_map, cache, resolving);
+    let result = resolve_module_uncached(
+        path,
+        project_root,
+        sources,
+        ambient,
+        source_map,
+        cache,
+        resolving,
+    );
     resolving.remove(&canonical);
 
     let resolved = result?;
@@ -184,24 +335,45 @@ pub fn resolve_module(
 fn resolve_module_uncached(
     path: &Path,
     project_root: &Path,
+    sources: ModuleSource,
+    ambient: &Ambient,
     source_map: &mut SourceMap,
     cache: &mut HashMap<PathBuf, ResolvedModule>,
     resolving: &mut HashSet<PathBuf>,
 ) -> Result<ResolvedModule, Vec<Diagnostic>> {
-    let source = std::fs::read_to_string(path).map_err(|e| vec![io_error(path, e)])?;
+    let source = sources.read(path).map_err(|e| vec![io_error(path, &e)])?;
 
     let source_id = source_map.add_file(&source);
     let tokens = obfusku_syntax::lexer::tokenize(&source, source_id).map_err(|d| vec![d])?;
     let surface = obfusku_syntax::parser::parse(&tokens, source_id)?;
 
-    let (type_prelude, value_prelude, imported_type_decls) =
-        resolve_imports(&surface, project_root, source_map, cache, resolving)?;
+    let (import_types, import_values, import_type_decls) = resolve_imports(
+        &surface,
+        project_root,
+        sources,
+        ambient,
+        source_map,
+        cache,
+        resolving,
+    )?;
+    let shadowable = ambient.shadowable(&import_types);
+    let mut type_prelude = ambient.types.clone();
+    type_prelude.extend(import_types);
+    let mut value_prelude = ambient.values.clone();
+    value_prelude.extend(import_values);
+    let mut imported_type_decls = ambient.type_decls.clone();
+    imported_type_decls.extend(import_type_decls);
 
-    let core_module = obfusku_syntax::desugar::desugar(&surface)?;
-    let typed = obfusku_typecheck::check_with_prelude_and_types(
+    let core_module = obfusku_syntax::desugar::desugar_with_ambient(
+        &surface,
+        &HashSet::new(),
+        &imported_type_decls,
+    )?;
+    let typed = obfusku_typecheck::check_shadowing(
         &core_module,
         type_prelude,
-        imported_type_decls,
+        &imported_type_decls,
+        &shadowable,
     )?;
     let evaluated =
         obfusku_runtime::evaluate_with_prelude(&core_module, value_prelude).map_err(|d| vec![d])?;

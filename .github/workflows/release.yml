@@ -3,87 +3,107 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-release:
-    name: Build Release Binary
+  verify-version:
+    name: Verify version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Tag is SemVer and matches the manifests
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "::error::tag is not SemVer: $TAG"; exit 1; }
+          manifest="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '[.packages[].version] | unique | join(",")')"
+          [ "$manifest" = "$version" ] \
+            || { echo "::error::manifest version ($manifest) does not match tag ($version)"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Tag commit is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"
+
+  build:
+    name: Build and check (${{ matrix.target }})
+    needs: verify-version
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact_name: obfusku-linux-x86_64
-            cli_artifact_name: obfusku-cli-linux-x86_64
-            lsp_artifact_name: obfusku-lsp-linux-x86_64
-            binary_ext: ""
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact_name: obfusku-macos-aarch64
-            cli_artifact_name: obfusku-cli-macos-aarch64
-            lsp_artifact_name: obfusku-lsp-macos-aarch64
-            binary_ext: ""
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_name: obfusku-windows-x86_64.exe
-            cli_artifact_name: obfusku-cli-windows-x86_64.exe
-            lsp_artifact_name: obfusku-lsp-windows-x86_64.exe
-            binary_ext: ".exe"
-            
-    runs-on: ${{ matrix.os }}
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { os: macos-15, target: aarch64-apple-darwin }
+          - { os: windows-2025, target: x86_64-pc-windows-msvc }
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: just@1.57.0,cargo-deny@0.19.9
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         with:
           toolchain: 1.93.0
+          components: rustfmt, clippy
           targets: ${{ matrix.target }}
-
-      - name: Build release binaries
-        run: cargo build --release --target ${{ matrix.target }} -p obfusku-cli -p obfusku-lsp
-
-      - name: Stage artifacts
-        shell: bash
-        run: |
-          mkdir -p dist
-          ext="${{ matrix.binary_ext }}"
-          cp "target/${{ matrix.target }}/release/obfusku${ext}" "dist/${{ matrix.artifact_name }}"
-          cp "target/${{ matrix.target }}/release/obfusku${ext}" "dist/${{ matrix.cli_artifact_name }}"
-          cp "target/${{ matrix.target }}/release/obfusku-lsp${ext}" "dist/${{ matrix.lsp_artifact_name }}"
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - run: just install
+      - run: just check
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: just package
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.artifact_name }}
+          name: dist-${{ matrix.target }}
           path: dist/*
+          retention-days: 1
 
-  publish-release:
-    name: Publish GitHub Release
-    needs: build-release
-    runs-on: ubuntu-latest
+  publish:
+    name: Publish
+    needs: [verify-version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: dist
           merge-multiple: true
-
-      - name: Generate Checksums
-        run: |
-          cd dist
-          sha256sum * > SHA256SUMS
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Install tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
-          files: |
-            dist/*
-          generate_release_notes: true
+          tool: just@1.57.0,git-cliff@2.14.2
+      - name: Checksums and release notes
+        env:
+          VERSION: ${{ needs.verify-version.outputs.version }}
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum * > SHA256SUMS)
+          just changelog
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: dist/*
+          body_path: RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref_name, '-') }}

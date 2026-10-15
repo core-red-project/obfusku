@@ -26,9 +26,12 @@ Expected to go stale; re-run periodically. Decision rationale lives in
 - TCO + `Catch` carve-out — → `spec/SEMANTIC_CORE.md` §14.1
 - ADTs / constructors as ordinary functions — → `spec/SEMANTIC_CORE.md` §9
 - Match/Pattern, full exhaustiveness (incl. record patterns) — → `spec/SEMANTIC_CORE.md` §10, §17
+- Record field access `p.x` and persistent update `p.{x: v}` — → `spec/SEMANTIC_CORE.md` §9.3 · `spec/adr/ADR-025-records-generated-operations-and-collections.md`
+- Generated ordering (`<`/`>`/`≤`/`≥`, `⍋`) and rendering (`⍕`) for every type without function parts, constraint-checked through generic functions — → `spec/SEMANTIC_CORE.md` §18.1
+- Persistent `Array` (32-way trie), ordered `Map`/`Set`, and array construction natives — → `spec/GLYPH_SYSTEM_DESIGN.md` §10.7
 - Value restriction / letrec-group-aware generalization — → `spec/SEMANTIC_CORE.md` §19.1
 - `Optional<T>`/`Result<T,E>` as canon ambient ADTs (`⦰`/`⧫`, `✓`/`✗`) — → `spec/GLYPH_SYSTEM_DESIGN.md` §10.3, §10.4
-- `Raise`/`Catch`, dynamic-extent resolution, built-in closed `Exception` ADT — → `spec/SEMANTIC_CORE.md` §15, §15.1, §15.2, §15.3 · `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §7.8 · `spec/adr/ADR-015-exception-closed-adt-and-catch-semantics.md`
+- `Raise`/`Catch`, dynamic-extent resolution, open `Exception` ADT with user-declared variants (`☈`) — → `spec/adr/ADR-026-open-exceptions.md` · `spec/SEMANTIC_CORE.md` §15, §15.1, §15.2, §15.3 · `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §7.8 · `spec/adr/ADR-015-exception-closed-adt-and-catch-semantics.md`
 - Arithmetic/comparison/equality/logical primitives, closed-table typing, total equality — → `spec/SEMANTIC_CORE.md` §18, §20.2
 - Generic top-level function / local-`LetRec` signatures — → `spec/SEMANTIC_CORE.md` §19
 - `List<T>` (`⊘`/`⁝`, ambient-stdlib pattern matching, `⟐`/`⌿`/`⌽` combinators) — → `spec/SEMANTIC_CORE.md` §9.1 · `spec/GLYPH_SYSTEM_DESIGN.md` §10.3
@@ -39,6 +42,18 @@ Expected to go stale; re-run periodically. Decision rationale lives in
 - Typechecker parameter-type propagation and cross-`Checker` scheme identity — → `spec/adr/ADR-001-typechecker-parameter-propagation-and-scheme-identity.md`
 - Generic ADT arity checking — → `spec/adr/ADR-003-generic-adt-arity-checking.md`
 - `Int` overflow semantics (fixed-width, raises, never panics) — → `spec/adr/ADR-008-int-overflow-semantics.md`
+
+### Runtime and namespace
+- Resolved IR: slot-addressed locals, shared global cells, interned tags; native `⟐ ⌿ ⌽` in constant stack — → `spec/adr/ADR-028-ambient-shadowing-resolved-runtime-and-traces.md`
+- Call traces at an uncaught exception (innermost twelve activations, as notes) — → same
+- Ambient value names shadowable per module; type names and constructors reserved — → same
+
+### Numbers, text, bytes and host streams
+- Literals `0x`/`0b`/`0o`, `_` separators, exponent without fraction, the `Int` minimum, `\u{…}` escapes — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §5 · `spec/adr/ADR-027-numbers-text-bytes-and-host-streams.md`
+- `Int`/`Real` function library, min/max over any ordered type — → `spec/SEMANTIC_CORE.md` §20.4
+- `Str` case, search, replace, code points, scalars and graphemes — → `spec/adr/ADR-027-numbers-text-bytes-and-host-streams.md`
+- `⌭` bytes, raw stdout/stdin, terminal query, clocks, randomness, append/remove/move/copy/stat — → `spec/GLYPH_SYSTEM_DESIGN.md` §10.2
+- Process spawning and signals are excluded by the filesystem-root capability model (a decision, not a deferral) — → `spec/adr/ADR-027-numbers-text-bytes-and-host-streams.md`
 
 ### Surface grammar
 - Literals, references, application, pipeline, nested scoping — → `spec/ABSTRACT_GRAMMAR.md` §3.3–3.4
@@ -68,10 +83,13 @@ Expected to go stale; re-run periodically. Decision rationale lives in
 - `Raise`/`Catch` typing rules — → `spec/SEMANTIC_CORE.md` §15.1
 
 ### Runtime
-- Tree-walking evaluator, TCO trampoline (stack-safe to ~100k) — → `spec/SEMANTIC_CORE.md` §14.1
+- Tree-walking evaluator, TCO trampoline (non-tail recursion bounded by a catchable recursion limit; tail calls are constant-space) — → `spec/SEMANTIC_CORE.md` §14.1
 - `eval::apply_value` — host-native → Obfusku-callback plumbing, scoped to `Array` combinators, non-trampolined, no new language primitive — → `spec/adr/ADR-021-array-combinators-are-pure-natives.md`
 - Values: Int/Real/Str/Bool/Unit/Closure/Cell/Adt/List/Array — → `spec/SEMANTIC_CORE.md` §2, §9.1, §9.2
 - `⌁↑`/`⌁↓`/`⌁↓⌬`/`⌁↑⌬` (ambient I/O, Project-root filesystem boundary, symlink-escape rejection) — → `spec/SEMANTIC_CORE.md` §15.4 · `spec/adr/ADR-010-io-host-boundary.md` · `spec/adr/ADR-019-project-root-filesystem-boundary.md`
+- `⌁↓⌥` (program arguments, `run <target> -- <args>`), `⌁↓⎈` (environment), `obfusku bundle` — → `spec/adr/ADR-022-process-natives-and-bundling.md`
+- `Str` natives (`⫽ ⫴ ⌫ ∋ ⍴ ⊏ ↦ ⇝ ⍕ ⍘`), `⌁↑⍉` (stderr), `⌁↯` (exit) — → `spec/adr/ADR-023-text-natives-stderr-and-exit.md`
+- Directory/existence/byte natives, `⚑` flags, rope `Str` — → `spec/adr/ADR-024-filesystem-bytes-rope-strings-and-flags.md`
 - Unit value literal in expression position — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §5
 - Standard library as ambient prelude (`List<T>`/`Optional<T>`/`Result<T,E>`/`⟐`/`⌿`/`⌽`, plus pure `Array`/numeric-conversion natives) — → `spec/adr/ADR-012-ambient-stdlib.md` · `spec/IMPLEMENTATION_ARCHITECTURE.md` §15
 
@@ -92,21 +110,34 @@ Expected to go stale; re-run periodically. Decision rationale lives in
 
 Nothing currently pending — the previous entry here (`readFile`/`writeFile` host wiring, blocked on the module/artifact model) is resolved: both are implemented, and the Project model that was blocking their scoping policy is `ADR-017`/`ADR-019`.
 
-## Deferred (intentional)
+## Open work
 
-- `test` command — needs a language-level testing construct that does not exist; not invented as a CLI-level naming convention — → `spec/LANGUAGE_SPEC.md` §5
-- Packaging/archive format for a distributed Source Artifact, external-Project dependency resolution, manifest metadata beyond `format`/`entry`/`name` — → `spec/adr/ADR-017-obfusku-project-model.md` · `spec/adr/ADR-020-obfusku-project-manifest.md`
-- `Real` literal internationalization (locale-variant decimal separator) — closed, deferred by design, not debt: `,` is already the structural list separator, so a decimal comma would make `f(1,5)` genuinely ambiguous — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §20
-- Standard-library crate extraction (`stdlib.obk`/native modules currently live in `crates/obfusku-cli`) — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §15, §20
-- LSP / editor tooling — never scoped in `spec/`
-- Selective/aliased imports, re-exporting an imported name — → `spec/adr/ADR-006-whole-module-imports.md`
+Each item is something to build, with the deliverable named. Nothing here
+is a statement that the language is "done" without it.
+
+**Language**
+- Assertion construct: a form with a message and source location, replacing the `☄ Failure("assertion", …)` convention `obfusku test` relies on — → `spec/adr/ADR-030-test-command.md`
+- Formatter: a comment inside a declaration is moved above it, and long expressions are not wrapped — → `crates/obfusku-fmt`
+- Pattern guards, or-patterns and as-patterns — → `spec/SEMANTIC_CORE.md` §10
+- Row-polymorphic field access (today a field name must belong to one record, or the base must be annotated) — → `spec/SEMANTIC_CORE.md` §9.3
+- User-defined instances of the generated operations (ordering, rendering) — design open — → `spec/SEMANTIC_CORE.md` §18.1
+
+**Standard library**
+- `Str` formatting (padding, number formats) and a `Char`-level API beyond `⌯`/`⌮`/`⍂`/`⌶`
+- Hyperbolic/inverse trigonometric functions, `Real` rounding to a digit count, seedable and cryptographic randomness
+- `Optional`/`Result` combinators and `List` completions (`zip`, `take`, `drop`, `any`, `all`, `length`, tail-recursive `⟐`/`⌿`)
+- Standard-library crate extraction (`stdlib.obk`/native modules live in `crates/obfusku-cli`) — → `spec/IMPLEMENTATION_ARCHITECTURE.md` §15, §20
+
+**Modules and tooling**
+- Selective/aliased imports, re-export of an imported name, qualified access to ambient names — → `spec/adr/ADR-006-whole-module-imports.md`
+- Packaging format for a distributed Source Artifact, external-Project dependency resolution, manifest metadata beyond `format`/`entry`/`name` — → `spec/adr/ADR-017-obfusku-project-model.md` · `spec/adr/ADR-020-obfusku-project-manifest.md`
 - Formatter comment/trivia preservation — → `spec/adr/ADR-009-formatter-architecture.md`
-- REPL filesystem natives — no single entry file to scope against — → `spec/adr/ADR-013-repl-incremental-evaluation.md`
-- Any further canon stdlib type (a second collection, more conversions) — future library-content decisions, not gaps in what's already named
+- REPL filesystem natives — → `spec/adr/ADR-013-repl-incremental-evaluation.md`
+- Structured (`--format=json`) diagnostics, trace entries with argument values
+- Line editing and history in the REPL
+- Language server: completion, hover, go-to-definition, rename (diagnostics exist today)
 
-## Future / evaluated and declined
-
-- Hand-rolled CLI argument parsing kept in place of adopting a dedicated parsing crate.
-- Structured (`--format=json`) diagnostic output for `check`/`inspect` — no concrete consumer yet.
-- Line-editing library for the REPL — a real nicety, declined to keep a minimal dependency footprint.
-- Arbitrary-precision integers — would reverse `spec/adr/ADR-008-int-overflow-semantics.md`; not planned.
+**Runtime**
+- Shrink `Value` (40 bytes today) and specialize `Int` operators in the IR; both are the next measured levers — → `spec/adr/ADR-028-ambient-shadowing-resolved-runtime-and-traces.md`
+- Reconsider arbitrary-precision integers against `spec/adr/ADR-008-int-overflow-semantics.md`
+- `Real` literal localization — a decimal comma conflicts with `,` as the list separator, so this needs a different notation, not a flag — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §20

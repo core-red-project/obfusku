@@ -14,7 +14,7 @@ pub use infer::instantiate_core_type;
 use infer::{Checker, TypeEnv};
 use obfusku_core::ast::{BindingGroup, Module, TypeDecl};
 use obfusku_diagnostics::{Diagnostic, Severity, Span};
-pub use types::{Scheme, Type, TypeVarId};
+pub use types::{Constraint, Scheme, Type, TypeVarId};
 
 /// The type scheme of every name available in the ambient environment
 /// (from stdlib, natives, or imported modules) — seeded into a fresh
@@ -78,7 +78,7 @@ pub fn check(module: &Module) -> Result<TypedModule, Vec<Diagnostic>> {
 /// this module's own bindings are inferred — as if imported. A local
 /// binding reusing a prelude name is the same static error as reusing
 /// an ordinary top-level name (§20 gives imports no special shadowing
-/// rule over locals).
+/// rule over locals); [`check_shadowing`] relaxes that for ambient names.
 pub fn check_with_prelude(
     module: &Module,
     prelude: Prelude,
@@ -104,11 +104,40 @@ pub fn check_with_prelude(
 /// the value prelude mechanism. Because `AdtInfo` and `VariantInfo` store
 /// named type parameters rather than checker-local `TypeVarId`s, importing
 /// type declarations carries no variable collision risk.
+// The owned `Vec` is the published signature; callers and tests pass one.
+#[allow(clippy::needless_pass_by_value)]
 pub fn check_with_prelude_and_types(
     module: &Module,
     prelude: Prelude,
     imported_type_decls: Vec<TypeDecl>,
 ) -> Result<TypedModule, Vec<Diagnostic>> {
+    check_shadowing(
+        module,
+        prelude,
+        &imported_type_decls,
+        &std::collections::HashSet::new(),
+    )
+}
+
+/// Same as [`check_with_prelude_and_types`], but a local binding whose
+/// name is in `shadowable` replaces that prelude name for this module
+/// instead of colliding with it. The caller passes exactly the ambient
+/// value names that no import re-binds and that are not constructors
+/// (a constructor's name is tied to its type, so it can never be
+/// shadowed) — `ADR-028`.
+pub fn check_shadowing(
+    module: &Module,
+    mut prelude: Prelude,
+    imported_type_decls: &[TypeDecl],
+    shadowable: &std::collections::HashSet<String>,
+) -> Result<TypedModule, Vec<Diagnostic>> {
+    for group in &module.bindings {
+        for binding in group.bindings() {
+            if shadowable.contains(binding.name.as_str()) {
+                prelude.remove(binding.name.as_str());
+            }
+        }
+    }
     let mut seen: std::collections::HashMap<&str, Span> = std::collections::HashMap::new();
     let mut dup_errors = Vec::new();
     for group in &module.bindings {
@@ -186,7 +215,10 @@ pub fn check_with_prelude_and_types(
     let mut seen_variant_tags: std::collections::HashMap<&str, Span> =
         std::collections::HashMap::new();
     for td in &all_type_decls {
-        if let Some(&first_span) = seen_adt_names.get(td.tag.as_str()) {
+        if td.tag == "Exception" {
+            // Extends the built-in type (`ADR-026`); variant tags are still
+            // checked for collisions below.
+        } else if let Some(&first_span) = seen_adt_names.get(td.tag.as_str()) {
             note_duplicate(&td.tag, td.span, first_span, &mut type_dup_errors);
         } else {
             seen_adt_names.insert(&td.tag, td.span);
@@ -297,15 +329,13 @@ pub fn check_with_prelude_and_types(
                     };
                     match result {
                         Ok(inferred) => {
-                            if let Some(slot) = slots.get(&m.name) {
-                                if let Type::Var(id) = slot.ty {
-                                    if let Err(d) = checker.unify(&Type::Var(id), &inferred, m.span)
-                                    {
-                                        errors.push(d);
-                                        group_failed = true;
-                                        continue;
-                                    }
-                                }
+                            if let Some(slot) = slots.get(&m.name)
+                                && let Type::Var(id) = slot.ty
+                                && let Err(d) = checker.unify(&Type::Var(id), &inferred, m.span)
+                            {
+                                errors.push(d);
+                                group_failed = true;
+                                continue;
                             }
                             inferred_members.push((m, inferred));
                         }
@@ -325,6 +355,7 @@ pub fn check_with_prelude_and_types(
         }
     }
 
+    errors.extend(checker.finish());
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -350,6 +381,11 @@ pub fn check_with_prelude_and_types(
                 ty: TypeResult::Polymorphic(Scheme {
                     vars,
                     ty: resolved_ty,
+                    constraints: p
+                        .generalized
+                        .as_ref()
+                        .map(|s| s.constraints.clone())
+                        .unwrap_or_default(),
                 }),
                 exported: p.exported,
             });

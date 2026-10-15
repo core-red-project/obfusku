@@ -350,7 +350,7 @@ Pure orchestration and presentation — no language logic of its own.
 | `repl` | **`ReplSession` (`obfusku-cli::lib`): incremental, not whole-buffer-rerun.** An earlier design appended each accepted line to a growing buffer and re-ran the entire buffer from scratch on every submission — that approach was replaced, not merely amended: each submitted line is now parsed/type-checked/evaluated exactly once against an accumulated `type_prelude`/`value_prelude`/`type_decls` environment carried on the session, so a line's declarations become available to later lines without ever replaying its own evaluation. A line that fails to parse/type-check is reported and dropped without being committed, so one bad line can't corrupt the session. The session is seeded from the same `stdlib::load`/`natives::load_io_only` the other commands use, so the ambient stdlib and `⌁↑`/`⌁↓` are available from the first line — `⌁↓⌬`/`⌁↑⌬` deliberately are not, since the REPL has no single entry file to scope a filesystem capability against (`spec/LANGUAGE_SPEC.md` §5's still-open artifact model). Because evaluation is genuinely incremental now, a native with an observable effect fires exactly once per submission, not once per later line — the replay hazard the earlier whole-buffer design had is gone by construction, not merely avoided in practice. Like `run`, its printed value uses `Value`'s derived `Debug` representation — an implementation convention, not a stable display format. |
 | `inspect` | exposes intermediate representations (`--tokens`, `--ast`, `--core`) via debug-printable types already public in `obfusku-syntax`/`obfusku-core` |
 | `build` | `syntax::parse_and_desugar` → `typecheck::check` over the entry module's whole reachable import graph, requiring a real Project (`obfusku.toml`, `ADR-017`) — no bare-file fallback. Certifies the Project as a valid, distributable Source Artifact; writes nothing to disk (no packaging format exists yet). |
-| `test` | **explicitly unresolved** — needs a language-level testing construct that does not exist; not invented here as a CLI-level naming convention (`spec/LANGUAGE_SPEC.md` §5). |
+| `test` | Runs each file matched by `[test] include` (default `tests/**/*.obk`) as its own `obfusku run`; a file passes when it finishes without an uncaught exception (`spec/adr/ADR-030-test-command.md`). |
 | `version` | crate version metadata only |
 
 No crate other than `obfusku-cli` may depend on it — this is what makes
@@ -534,11 +534,9 @@ grandfathered in by having existed.
    (§15); whether `stdlib.obk`/the native modules ever move out of
    `crates/obfusku-cli` into a standalone crate remains open, and isn't
    forced by anything decided so far.
-3. **`test` CLI command** — `build` is implemented (`spec/LANGUAGE_SPEC.md`
-   §5); `test` remains deliberately unimplemented because it needs a
-   language-level testing construct that does not exist, not because
-   of anything left open in the artifact/distribution model, which is
-   now resolved.
+3. **`test` CLI command** — implemented as a convention over ordinary
+   programs (`spec/adr/ADR-030-test-command.md`); a dedicated assertion
+   construct is still open.
 None of these block executing §3's repository restructuring or beginning
 crate scaffolding — each is a follow-on decision, not a foundational gap.
 

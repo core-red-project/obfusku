@@ -14,15 +14,15 @@ than left open, since a frozen Core can't carry unresolved forks — where a
 fork was a real either-way judgment call, the choice made and its
 consequence are stated plainly rather than hidden as if it were forced.
 
-## 0. Method: a small core, a larger surface
+## 0. Method: a defined core, a rich surface
 
 Obfusku has two layers:
 
 - **Surface syntax** — what a person writes. Includes convenience forms:
   `if`, under-application, argument holes, the pipe connective, implicit
   pipeline-value reference. Every one of these is *sugar*.
-- **Core calculus** — the minimal set of forms the semantics is actually
-  defined over. Everything in Surface Syntax has a stated desugaring into
+- **Core calculus** — the set of forms the semantics is actually defined
+  over. Everything in Surface Syntax has a stated desugaring into
   Core. If a surface form can't be desugared, it isn't well-defined yet, and
   doesn't belong in the language.
 
@@ -50,6 +50,8 @@ Expr :=
   | MutCell(initial: Expr)                   -- allocates a rebindable cell
   | MutRebind(cell: Expr, newValue: Expr)    -- rebinds a cell, yields Unit
   | MutRead(cell: Expr)
+  | Field(base: Expr, name)                  -- record field read, §9.3
+  | Update(base: Expr, [(name, Expr)])       -- persistent record update, §9.3
 
 Pattern :=
   | PVar(name)
@@ -58,7 +60,8 @@ Pattern :=
   | PConstructor(tag, subpatterns: [Pattern])
 ```
 
-That's the whole core expression language. Every multi-argument function is
+That is the core expression language (operators, array literals and indexing
+are specified in §9.2 and §20.2). Every multi-argument function is
 represented as nested single-argument `Lambda`s (a curried chain); every
 multi-argument call is nested `Apply`. This single choice is what makes §6
 (partial application) fall out for free instead of needing its own rule.
@@ -302,6 +305,31 @@ alongside `CONCRETE_SYMBOLIC_GRAMMAR.md` §7.9's surface grammar:
   already anticipates some of these will eventually need a native
   (non-Core-expressible) runtime hook — a separate, later architectural
   decision, not required to land `ArrayLiteral`/`IndexExpr` themselves.
+
+## 9.3 Records — field access and persistent update
+
+A record is a one-variant ADT whose declaration also names its fields
+(`VariantDecl.field_names`). Construction by name and matching by name
+reorder into the positional `Constructor`/`PConstructor` forms (§9, the
+abstract grammar §4). Two Core forms read and rewrite fields without
+matching:
+
+- `Field(base, name)` evaluates `base` to a record value and yields the
+  field `name`.
+- `Update(base, [(name, value), …])` evaluates `base`, then each `value`
+  left to right, and yields a **new** value of the same record with those
+  fields replaced. The result has the type of `base`; a field cannot change
+  type. Values stay persistent (§2).
+
+**Typing.** The checker resolves the record from `base`'s type when it is
+known. When `base` is still an unknown type (a lambda parameter without an
+annotation), the field name must be declared by exactly one record in
+scope, and `base` is unified with that record's type; a name declared by
+several records is an error asking for an annotation. A field name that no
+record declares, or a base that is not a record, is a static error.
+Field access never needs a runtime type test beyond the constructor tag.
+
+---
 
 ## 10. Pattern semantics — a distinct grammar category, not a variant of Expr
 
@@ -621,37 +649,36 @@ without being declared. A fixed, closed built-in `Exception` type with no
 extensibility was also rejected as too restrictive for domain-specific
 error information.
 
-**Resolution:** `Raise` requires its argument to be of a single standard,
-**closed** `Exception` type — an ordinary ADT, costing no new Core
-mechanism — with exactly five built-in variants, enumerated here in full,
-not illustratively:
+**Resolution (revised, `ADR-026`):** `Raise` requires its argument to be of
+the single standard **`Exception`** type — an ordinary ADT, costing no new
+Core mechanism — which is **open**: it has five built-in variants and any
+module may add more with an exception declaration (`☈ Name(T, …)`).
+
+Built-in variants:
 
 - `DivisionByZero` — `Int` division/modulo by zero (§15.3).
 - `IntegerOverflow` — an `Int` arithmetic result outside `i64`'s
-  representable range (§20.2) — a genuinely different condition from
-  `DivisionByZero`, not merged into it (`MIN_INT / -1`/`MIN_INT % -1` are
-  the one case `÷`/`⌗` can raise this for).
+  representable range (§20.2), a different condition from
+  `DivisionByZero` (`MIN_INT / -1`/`MIN_INT % -1` raise this).
 - `NonExhaustiveMatch` — a non-exhaustive `Match` reached at runtime;
-  should never occur per §17's static exhaustiveness check, but the
-  variant exists defensively rather than being unreachable-and-undefined.
-- `InvalidOperation(Str)` — a language-level operation misused in a way
-  no other variant names (the message is the payload).
-- `Failure(tag: Str, payload: Str)` — the one deliberately generic
-  variant, parametric in spelling (not in type — both fields are
-  concretely `Str`), for user-defined error shapes.
+  defensive, since §17's static check should prevent it.
+- `InvalidOperation(Str)` — a language-level operation misused (the
+  message is the payload).
+- `Failure(tag: Str, payload: Str)` — the generic variant for shapes that
+  need no declaration of their own.
 
-No sixth variant exists, and none is planned implicitly by a hedge like
-"and similarly-shaped cases" — a new built-in failure condition requires
-amending this list explicitly, the same way `IntegerOverflow` itself was
-added here (P0-D) rather than left for a reader to infer. Because the
-*variant set* of `Exception` is fixed (only `Failure`'s payload varies in
-content, not in type), `Exception` remains an ordinary closed type for
-exhaustiveness purposes (§17) — no mandatory wildcard is forced on a
-`Match` over `Exception` the way one is forced for `Int` or `String`, and
-a `Match`/`Catch` covering exactly these five arms is exhaustive. This
-keeps the Result/exceptional-failure distinction sharp: nothing can be
-raised without being deliberately
-shaped as an `Exception` first.
+A declared variant carries any field types (including records and other
+ADTs) and is an ordinary constructor of type `Exception`: raised with `☄`,
+matched by pattern, rendered by `⍕`. Variant tags share the module's flat
+constructor namespace (§9) and may not collide with any other constructor.
+
+**Open type, so a wildcard is required.** Because a module can declare
+variants another module never sees, a `Match` over `Exception` is
+exhaustive only with a wildcard or variable arm (§17). Listing the five
+built-ins no longer closes the match. This keeps the Result/exceptional
+distinction sharp: nothing can be raised without being deliberately
+shaped as an `Exception`, and a program can attach typed data to its own
+failures without encoding it into strings.
 
 ### 15.3 Division by zero — the contradiction, resolved
 
@@ -681,8 +708,19 @@ already made total would be an inconsistency, not a safety improvement.
 
 ### 15.4 Ambient I/O — signatures, failure tags, and filesystem scope, all resolved
 
+The four operations below are the original contract — and the contract
+for failure tags and filesystem scope that every later operation shares;
+the host-effect family has since grown (`ADR-022`–`ADR-024`): program arguments `⌁↓⌥`,
+environment `⌁↓⎈`, error stream `⌁↑⍉`, exit `⌁↯`, directories
+`⌁↓⌂`/`⌁↑⌂`, existence `⌁⍰⌬`/`⌁⍰⌂`, bytes `⌁↓⌭`/`⌁↑⌭` over the `⌭` type,
+and — `ADR-027` — raw streams `⌁↑⎙ ⌁↓⎙ ⌁⍰⎙ ⌁↑⎚ ⌁↓⎚ ⌁⍰⌖`, clocks `⌁↓⧗ ⌁↓⧖
+⌁↑⧗`, randomness `⌁↓⚀ ⌁↓⚁`, and file management `⌁⊕⌬ ⌁⊖⌬ ⌁⊖⌂ ⌁⇄⌬ ⌁⧉⌬ ⌁⍰⌭
+⌁⍰⧗`. All use the same failure tags and the same Project-root boundary
+described here. There is deliberately no process-spawning or signal
+operation: it would sit outside that boundary (`ADR-027`).
+
 Obfusku's standard ambient environment — names available without any
-explicit `⟲` — includes four I/O operations (named abstractly below as
+explicit `⟲` — includes I/O operations (the original four named abstractly below as
 `print`/`readLine`/`readFile`/`writeFile`, per this document's own
 "zero concrete glyphs" status; their surface spelling is the host-effect
 family in `GLYPH_SYSTEM_DESIGN.md` §10.2). **This subsection fixes their
@@ -786,7 +824,8 @@ domain (`Int`, `Real`, `String`), listing literals alone can never be
 exhaustive — for these **open** types, a `PWildcard`/`PVar` arm is
 mandatory, not merely one sufficient way to close out the match. This
 distinction must be part of the pattern checker's type-directed logic,
-not an incidental compiler behavior.
+not an incidental compiler behavior. `Exception` (§15.2) is also open,
+for a different reason: its variant set grows across modules.
 
 ---
 
@@ -842,6 +881,44 @@ ordinary structural equality.
 **Cross-type comparison** is not defined at all — `==` is only
 well-typed between two fully-instantiated values of the identical type,
 consistent with the existing "no implicit conversions" commitment.
+
+---
+
+### 18.1 Generated ordering and rendering
+
+Equality is the first of three operations the language generates for every
+type built from primitives, ADTs, records and collections (`ADR-025`). Like
+equality, none is user-definable, and each is a **static type error** on
+a type with a function-typed part anywhere in its structure.
+
+**Ordering** (`<`, `>`, `≤`, `≥`, `⍋`, and `Map`/`Set` keys) is a total,
+structural order:
+
+- `Int` numerically; `Str` by code point (equivalently UTF-8 bytes);
+  `Bool` with `◎ < ◉`; `Unit` equal to itself.
+- `Real` by value, with `NaN` equal to itself and above every other value
+  and `-0.0 = 0.0`, so ordering agrees with `==`. **A bare `Real` under `<`,
+  `>`, `≤`, `≥` keeps IEEE-754** (§18 above): every comparison with `NaN` is
+  `false`.
+- An ADT value compares first by the constructor's **declaration order**,
+  then field by field left to right. Records are the one-variant case.
+- `Array` and `List` compare lexicographically; a shorter prefix is
+  smaller. `Map` compares as its ascending `(key, value)` sequence, `Set`
+  as its ascending elements.
+- `Cell` has equality (identity, §18) but no ordering.
+
+**Rendering** (`⍕ : t → Str`) is canonical and source-like: `Int` in
+decimal, `Real` with a fractional part (`1.0`), `Str` quoted with the six
+escapes of §5, `◉`/`◎`, `∅`, constructors as `Tag(a, b)`, records as
+`Tag { f: v ⟢ g: w }`, `List` as nested `⁝`, `Array` as `[a, b]`,
+`Map` as `Map[k ↦ v, …]`, `Set` as `Set[a, b]`. It is what `run` prints.
+
+**How the checker enforces it.** Each use records an obligation on the
+operand's type. Obligations on a type variable that a binding generalizes
+become part of that binding's scheme, so a generic
+`λmax2(a: t, b: t): t` is accepted and every call site is checked at its
+concrete type; those left on an outer variable are resolved when that
+variable is.
 
 ---
 
@@ -903,17 +980,19 @@ A module is a named collection of top-level `Let`/`LetRec` bindings and
 data declarations. Export is metadata attached to a binding (visible
 outside the module) rather than a Core expression form — it doesn't affect
 evaluation, only name resolution across module boundaries. Import brings
-another module's exported names into scope for resolution. This section is
-intentionally minimal: the artifact model (what a compiled/packaged module
-actually is) remains deferred per the design draft's open items, and
-nothing here should be read as prejudging that.
+another module's exported names into scope for resolution. Every module,
+imported or not, resolves against the same ambient environment (the
+standard library and the host natives), so a module can use `List`, `⍕`
+or `⌁↑` without importing anything. The Project model that defines what
+a module graph and a distributable unit are is `ADR-017`–`ADR-020`;
+`ADR-022` adds the standalone bundle.
 
 **Module-result convention.** What executing a module produces —
 "the result" of running a `.obk` program — is `run`'s own
 execution-reporting contract, not a Core-level concept: `obfusku-runtime::
 evaluate` evaluates every top-level binding in declaration order into one
 shared environment, and `run` reports the value of the **last** binding
-(named `RunResult` at the `obfusku-cli` boundary — see `ROADMAP.md`). This
+(named `RunResult` at the `obfusku-cli` boundary — see `docs/ROADMAP.md`). This
 says nothing about `exported` bindings specifically and is not a
 `main`/entry-point convention; the broader artifact/distribution model
 this section already defers (previous paragraph) is free to add its own
@@ -966,7 +1045,7 @@ multi-subexpression form in this document (§14) — `lhs` before `rhs`.
 Core-level forever**: `IMPLEMENTATION_ARCHITECTURE.md` §15 favors a future
 prelude-as-Obfusku-source model for most of the standard library. Module
 import resolution (`ImportDeclaration`) is now implemented (see
-`ROADMAP.md`), but operators have not been migrated onto it — they remain
+`docs/ROADMAP.md`), but operators have not been migrated onto it — they remain
 primitive `Expr` forms. A later desugaring-only migration to prelude
 functions would change nothing about surface syntax or observable
 semantics, only where the implementation of `+` lives.
@@ -992,21 +1071,22 @@ free. **`⊻` cannot be short-circuited by definition** — its result depends
 on both operands regardless of either one's value — so it stays an
 ordinary, always-both-operands-evaluated `BinaryOp`, unlike its siblings.
 
-**Closed dispatch table — no typeclasses, no user extension, checked
-structurally against the two operand types during inference:**
+**Dispatch table — no user-defined instances; arithmetic is checked
+structurally against the operand types, equality and ordering are
+generated (§18, §18.1):**
 
 | Operator | Accepted operand types | Result |
 |---|---|---|
 | `✚` | `Int, Int` / `Real, Real` / `Str, Str` (concatenation) | same type as operands |
 | `☠︎`, `✱`, `÷` | `Int, Int` / `Real, Real` | same type as operands |
 | `⌗` | `Int, Int` only | `Int` |
-| `<`, `>`, `<=`, `>=` | `Int, Int` / `Real, Real` | `Bool` |
+| `<`, `>`, `<=`, `>=` | any single type `T` with generated ordering (§18.1); a bare `Real` follows IEEE-754 | `Bool` |
 | `==`, `!=` | any single type `T` for which structural equality is defined per §18 (both operands must be exactly `T`; a `Lambda`-typed operand — or any type with a function-typed field anywhere in its structure, per §18 — is a **static type error**, not a runtime failure) | `Bool` |
 | `∧`, `∨`, `⊻` | `Bool, Bool` | `Bool` |
 | `¬` | `Bool` | `Bool` |
 | `−` (unary) | `Int` / `Real` | same type as operand |
 
-This is the entire table — closed, not "and other types where the
+This is the entire table — not "and other types where the
 meaning is unambiguous" (`DESIGN_VISION.md` §8's phrasing, which this
 resolves rather than defers further): a future type wanting `✚` support
 needs a deliberate amendment here, not an implicit extension inferred
@@ -1082,6 +1162,25 @@ numeric cast happens to do at its own edge cases (e.g. Rust's `as`
 between float and integer types has its own historical edge-case
 history) — the *contract* is this table, not a particular cast
 instruction's behavior.
+
+---
+
+## 20.4 The numeric library and `⌭` bytes
+
+`ADR-027` adds ordinary prelude values over `Int` and `Real`; none is an
+operator and none changes §20.2's table. `Int`: `abs`, `pow`
+(non-negative exponent), bitwise and/or/xor/not, shifts (count 0..=63).
+Every result outside `i64` — `pow`, and `abs` of the minimum — raises
+`IntegerOverflow` (§15.2); a bad shift count or exponent raises
+`InvalidOperation`. `min`/`max` are `a → a → a` under the generated
+order (§18.1) and need `Ord a`. `Real` functions follow IEEE-754 and
+never raise: an argument outside a function's domain gives `NaN`.
+
+`⌭` is a non-generic, variant-less type of immutable byte strings. It
+has generated equality, lexicographic ordering and rendering, so it can
+be a `Map`/`Set` key. Its operations are listed in `ADR-027`; element
+values are `Int` in `0..=255`, and any other value raises
+`InvalidOperation`.
 
 ---
 

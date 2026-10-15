@@ -5,7 +5,8 @@
 
 use obfusku_core::ast::{Expr, MatchArm, Module, Pattern};
 use obfusku_diagnostics::{SourceId, Span};
-use obfusku_runtime::{evaluate, evaluate_with_prelude, Value};
+use obfusku_runtime::{Value, evaluate, evaluate_with_prelude};
+use std::rc::Rc;
 
 fn sp() -> Span {
     Span {
@@ -34,7 +35,7 @@ fn lambda(param: &str, body: Expr) -> Expr {
     Expr::Lambda {
         param: param.to_string(),
         param_ty: None,
-        body: Box::new(body),
+        body: Rc::new(body),
         span: sp(),
     }
 }
@@ -81,7 +82,7 @@ fn match_(scrutinee: Expr, arms: Vec<(Pattern, Expr)>) -> Expr {
             .into_iter()
             .map(|(pattern, result)| MatchArm {
                 pattern,
-                result,
+                result: Rc::new(result),
                 span: sp(),
             })
             .collect(),
@@ -111,7 +112,7 @@ fn catch(body: Expr, handler_param: &str, handler_body: Expr) -> Expr {
     Expr::Catch {
         body: Box::new(body),
         handler_param: handler_param.to_string(),
-        handler_body: Box::new(handler_body),
+        handler_body: Rc::new(handler_body),
         span: sp(),
     }
 }
@@ -187,7 +188,7 @@ fn as_int(v: Value) -> i64 {
 fn literals_evaluate_to_themselves() {
     assert!(matches!(run(int(42)), Value::Int(42)));
     assert!(matches!(run(real(1.5)), Value::Real(v) if v == 1.5));
-    assert!(matches!(run(str_("hi")), Value::Str(s) if &*s == "hi"));
+    assert!(matches!(run(str_("hi")), Value::Str(ref s) if &**s == "hi"));
     assert!(matches!(run(boolean(true)), Value::Bool(true)));
 }
 
@@ -511,25 +512,24 @@ fn deep_tail_recursion_does_not_grow_the_rust_stack() {
     // ordinary process has — proving flat stack usage really comes from
     // TCO, not a small N happening to fit.
     let depth = 100_000usize;
-    let mut n_expr = ctor("Zero", vec![]);
-    for _ in 0..depth {
-        n_expr = ctor("Succ", vec![n_expr]);
-    }
-
-    let loop_body = match_(
-        var("n"),
-        vec![
-            (pctor("Zero", vec![]), int(0)),
-            (
-                pctor("Succ", vec![pvar("k")]),
-                apply(var("loop_"), var("k")),
-            ),
-        ],
-    );
 
     let handle = std::thread::Builder::new()
         .stack_size(1024 * 1024 * 1024)
         .spawn(move || {
+            let mut n_expr = ctor("Zero", vec![]);
+            for _ in 0..depth {
+                n_expr = ctor("Succ", vec![n_expr]);
+            }
+            let loop_body = match_(
+                var("n"),
+                vec![
+                    (pctor("Zero", vec![]), int(0)),
+                    (
+                        pctor("Succ", vec![pvar("k")]),
+                        apply(var("loop_"), var("k")),
+                    ),
+                ],
+            );
             as_int(run_letrec(
                 vec![("loop_", lambda("n", loop_body))],
                 vec![("result", apply(var("loop_"), n_expr))],
@@ -688,13 +688,11 @@ fn recursive_function_over_an_adt_combined_with_tail_position_match() {
 }
 
 #[test]
-fn duplicate_top_level_binding_names_are_a_caller_error_here_not_a_runtime_check() {
-    // Two module bindings sharing a name don't get real lexical
-    // shadowing at this layer — the runtime stores every binding in one
-    // shared, mutable frame, so a reused name silently overwrites the
-    // earlier one. `obfusku-typecheck::check` rejects duplicate
-    // top-level names outright, so only hand-built Core (as here, an
-    // explicit caller error per `evaluate`'s contract) reaches this.
+fn a_reused_top_level_name_keeps_the_binding_a_closure_resolved_to() {
+    // Names resolve when a binding is compiled, so a later binding of the
+    // same name does not reach back into an earlier closure.
+    // `obfusku-typecheck::check` rejects duplicates outright; this only
+    // pins the runtime's own behavior for hand-built Core.
     let capture_x = lambda("ignored", var("x"));
     let module = run_module(vec![
         ("x", int(1)),
@@ -702,11 +700,7 @@ fn duplicate_top_level_binding_names_are_a_caller_error_here_not_a_runtime_check
         ("x", int(2)),
         ("result", apply(var("capture_x"), boolean(true))),
     ]);
-    assert_eq!(
-        as_int(module),
-        2,
-        "documents the overwrite, not a guarantee"
-    );
+    assert_eq!(as_int(module), 1);
 }
 
 // ---------------------------------------------------------------------
@@ -756,7 +750,7 @@ fn arithmetic_real() {
 #[test]
 fn string_concatenation() {
     let v = run(binop(BinOp::Add, str_("foo"), str_("bar")));
-    assert!(matches!(v, Value::Str(s) if &*s == "foobar"));
+    assert!(matches!(v, Value::Str(ref s) if &**s == "foobar"));
 }
 
 #[test]
@@ -1008,7 +1002,7 @@ fn let_(name: &str, value: Expr, body: Expr) -> Expr {
     Expr::Let {
         name: name.to_string(),
         value: Box::new(value),
-        body: Box::new(body),
+        body: Rc::new(body),
         span: sp(),
     }
 }
@@ -1016,7 +1010,7 @@ fn let_(name: &str, value: Expr, body: Expr) -> Expr {
 fn letrec_(members: Vec<(&str, Expr)>, body: Expr) -> Expr {
     Expr::LetRec {
         bindings: members.into_iter().map(|(n, v)| mk_binding(n, v)).collect(),
-        body: Box::new(body),
+        body: Rc::new(body),
         span: sp(),
     }
 }
@@ -1153,11 +1147,11 @@ fn index(array: Expr, idx: Expr) -> Expr {
 #[test]
 fn array_literal_evaluates_its_elements_and_produces_an_array_value() {
     let v = run(array_lit(vec![int(1), int(2), int(3)]));
-    match v {
+    match &v {
         Value::Array(elems) => {
             assert_eq!(elems.len(), 3);
-            assert!(matches!(elems[0], Value::Int(1)));
-            assert!(matches!(elems[2], Value::Int(3)));
+            assert!(matches!(elems.get(0), Some(Value::Int(1))));
+            assert!(matches!(elems.get(2), Some(Value::Int(3))));
         }
         other => panic!("expected an Array, got {other:?}"),
     }
@@ -1166,7 +1160,7 @@ fn array_literal_evaluates_its_elements_and_produces_an_array_value() {
 #[test]
 fn empty_array_literal_evaluates_to_an_empty_array() {
     let v = run(array_lit(vec![]));
-    match v {
+    match &v {
         Value::Array(elems) => assert!(elems.is_empty()),
         other => panic!("expected an Array, got {other:?}"),
     }
@@ -1240,11 +1234,7 @@ fn prelude_bindings_are_visible_to_the_module() {
         &module,
         vec![(
             "imported".to_string(),
-            Value::Closure(std::rc::Rc::new(obfusku_runtime::value::ClosureData {
-                param: "x".to_string(),
-                body: std::rc::Rc::new(binop(BinOp::Add, var("x"), int(1))),
-                env: obfusku_runtime::env::Env::root(),
-            })),
+            obfusku_runtime::closure_from_core("x", &binop(BinOp::Add, var("x"), int(1))),
         )],
     )
     .expect("evaluation should not fail");
@@ -1283,4 +1273,24 @@ fn evaluate_with_prelude_returns_every_top_level_binding_with_its_export_flag() 
     assert!(!bindings[0].1);
     assert_eq!(bindings[1].0, "pub_");
     assert!(bindings[1].1);
+}
+
+#[test]
+fn dropping_a_long_cons_chain_needs_no_deep_stack() {
+    use std::rc::Rc;
+    // 300k nodes would need megabytes of stack to free recursively.
+    let handle = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(|| {
+            let mut list = Value::Unit;
+            for i in 0..300_000 {
+                list = Value::Adt {
+                    tag: Rc::from("⁝"),
+                    args: Rc::from(vec![Value::Int(i), list]),
+                };
+            }
+            drop(list);
+        })
+        .unwrap();
+    handle.join().unwrap();
 }

@@ -28,3 +28,5 @@ Thumbs.db
 
 # Tool caches
 .animoria/
+dist/
+RELEASE_NOTES.md

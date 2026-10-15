@@ -4,18 +4,23 @@
 //! user-defined ADTs (§9/§19), so [`Value::Adt`] is all they need.
 
 use crate::env::Env;
-use obfusku_core::ast::Expr;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 /// Code plus the environment captured when the `Lambda` was evaluated
 /// (§13) — captured uniformly for every free variable, `MutCell`-bound
 /// or not.
-#[derive(Debug)]
 pub struct ClosureData {
-    pub param: String,
-    pub body: Rc<Expr>,
+    pub body: Rc<crate::ir::Node>,
     pub env: Env,
+    /// The name it was bound to, for call traces; `λ` if anonymous.
+    pub name: Rc<str>,
+}
+
+impl std::fmt::Debug for ClosureData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<function {}>", self.name)
+    }
 }
 
 /// A host-provided function value. Multi-argument natives compose via
@@ -36,7 +41,7 @@ impl std::fmt::Debug for NativeFn {
 pub enum Value {
     Int(i64),
     Real(f64),
-    Str(Rc<str>),
+    Str(crate::text::Text),
     Bool(bool),
     Unit,
     Closure(Rc<ClosureData>),
@@ -56,12 +61,46 @@ pub enum Value {
     },
     /// §9.2 — a persistent, immutable sequence; same `Rc<[Value]>`
     /// sharing reason as [`Value::Adt`]'s `args`.
-    Array(Rc<[Value]>),
+    Array(crate::pvec::PVec),
+    /// Persistent ordered map; keys ordered by the generated total order.
+    Map(crate::pmap::PMap),
+    /// Persistent ordered set (a map whose values are all `Unit`).
+    Set(crate::pmap::PMap),
+    /// An immutable byte string (`⌭`, `ADR-027`).
+    Bytes(Rc<[u8]>),
+}
+
+/// Freeing a long `Cons` chain (or any deep ADT spine) would recurse once
+/// per element and overflow the stack; the unique spine is unlinked
+/// iteratively instead, so every node is dropped shallow.
+impl Drop for Value {
+    fn drop(&mut self) {
+        fn take_nested(args: &mut Rc<[Value]>, out: &mut Vec<Value>) {
+            if let Some(items) = Rc::get_mut(args) {
+                for item in items {
+                    if matches!(item, Value::Adt { .. }) {
+                        out.push(std::mem::replace(item, Value::Unit));
+                    }
+                }
+            }
+        }
+        let Value::Adt { args, .. } = self else {
+            return;
+        };
+        let mut pending = Vec::new();
+        take_nested(args, &mut pending);
+        while let Some(mut node) = pending.pop() {
+            if let Value::Adt { args, .. } = &mut node {
+                take_nested(args, &mut pending);
+            }
+        }
+    }
 }
 
 impl Value {
     /// §18 — structural equality. Cells compare by identity, not
     /// contents (§12.1). Closures are never equal to anything.
+    #[must_use]
     pub fn structural_eq(&self, other: &Value) -> bool {
         match (self, other) {
             (Value::Int(a), Value::Int(b)) => a == b,
@@ -77,8 +116,29 @@ impl Value {
                     && a1.iter().zip(a2.iter()).all(|(x, y)| x.structural_eq(y))
             }
             (Value::Array(a), Value::Array(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.structural_eq(y))
+                a.len() == b.len()
+                    && a.to_vec()
+                        .iter()
+                        .zip(b.to_vec().iter())
+                        .all(|(x, y)| x.structural_eq(y))
             }
+            (Value::Map(a), Value::Map(b)) => {
+                let (ea, eb) = (a.entries(), b.entries());
+                ea.len() == eb.len()
+                    && ea
+                        .iter()
+                        .zip(eb.iter())
+                        .all(|((k1, v1), (k2, v2))| k1.structural_eq(k2) && v1.structural_eq(v2))
+            }
+            (Value::Set(a), Value::Set(b)) => {
+                let (ea, eb) = (a.entries(), b.entries());
+                ea.len() == eb.len()
+                    && ea
+                        .iter()
+                        .zip(eb.iter())
+                        .all(|((k1, _), (k2, _))| k1.structural_eq(k2))
+            }
+            (Value::Bytes(a), Value::Bytes(b)) => a == b,
             _ => false,
         }
     }

@@ -1,7 +1,7 @@
 # ADR-020 — The Obfusku Project marker is `obfusku.toml`, a small, additively-versioned manifest naming the entry module
 
 ## Status
-Accepted
+Accepted. Extended by `ADR-029` (format `2`); format `1` is unchanged.
 
 ## Context
 `ADR-017` established that a Project marker must exist and must be able to record an entry module reference, but deliberately left its concrete file format undecided — inventing a format wasn't needed to fix the architecture. It is needed now: `obfusku run ./project` has no way to identify an entry module, and thus no way to execute, without a concrete, parseable marker. A marker also needs a story for how it evolves — a manifest format with no versioning or unknown-field policy becomes a compatibility hazard the moment a second field is ever added.

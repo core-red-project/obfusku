@@ -121,12 +121,19 @@ lets a reader disambiguate at a glance, not only a parser by context.
 ## 5. Literal syntax
 
 ```
-IntLiteral     ::= digit+
-RealLiteral     ::= digit+ "." digit+ (("e"|"E") ("+"|"-")? digit+)?
+IntDigits      ::= digit+ ("_" digit+)*
+IntLiteral     ::= IntDigits
+                 | "0" ("x"|"X") hexdigit+ ("_" hexdigit+)*
+                 | "0" ("b"|"B") bindigit+ ("_" bindigit+)*
+                 | "0" ("o"|"O") octdigit+ ("_" octdigit+)*
+RealLiteral     ::= IntDigits "." IntDigits Exponent?
+                 | IntDigits Exponent
+Exponent        ::= ("e"|"E") ("+"|"-")? digit+
 StringLiteral   ::= '"' StringChar* '"'
 StringChar      ::= (any char except '"' or '\')
                    | EscapeSequence
 EscapeSequence  ::= "\" ('"' | "\" | "n" | "t" | "r" | "0")
+                   | "\u{" hexdigit{1,6} "}"      -- a Unicode scalar value
 BoolLiteral     ::= "◉" | "◎"
 UnitLiteral     ::= "∅"
 ```
@@ -146,17 +153,22 @@ That wording presupposed escape sequences without ever defining them —
 fixed here with the actual production above, rather than left implicit.
 Decisions made explicit, not left to an implementation's discretion:
 
-- The accepted escapes are exactly `\"`, `\\`, `\n`, `\t`, `\r`, `\0` — a
-  `\` followed by anything else is a lexical error, not a literal
-  backslash.
+- The accepted escapes are exactly `\"`, `\\`, `\n`, `\t`, `\r`, `\0` and
+  `\u{h…}` — a `\` followed by anything else is a lexical error, not a
+  literal backslash.
 - A raw, unescaped newline **is** permitted inside a `StringLiteral`
   (matching common convention elsewhere) — `\n` is a convenience
   alternative, not the only way to include one.
-- **`\u{...}`-style Unicode escapes are explicitly deferred, not
-  silently included or silently forbidden.** Adding them is more than
-  closing this gap — it requires its own decision about invalid-codepoint
-  and surrogate handling, which belongs to a future revision, named here
-  so it isn't mistaken for an oversight.
+- **`\u{h…}` names one Unicode scalar value** (`ADR-027`): one to six
+  hex digits; a surrogate (`D800`–`DFFF`), a value above `10FFFF`, or a
+  malformed form is a lexical error. It exists so a source file can
+  stay NFC (§2) while spelling a decomposed or invisible character.
+- **Numeric literals** (`ADR-027`): `_` may separate digits and must
+  sit between two digits; radix integers must fit `i64`; an exponent
+  makes a `Real` even without a fractional part, but an `e` not
+  followed by digits is left to start an identifier. `9223372036854775808`
+  is legal only as the operand of `−` (the `Int` minimum). `.5` is not a
+  literal: `.` is the field-access token.
 
 `◉`/`◎` (True/False) are literals, not identifiers — reserved, never
 usable as ordinary names (`GLYPH_SYSTEM_DESIGN.md` §6.1). `NaN`/`Infinity`
@@ -407,6 +419,20 @@ parse-time one — matching how this document already treats other
 desugaring-only restrictions elsewhere (e.g. `LetRec`'s "every member is a
 `Lambda`" constraint, §11 of `SEMANTIC_CORE.md`).
 
+### 7.8a `FieldAccess` and `RecordUpdate`
+
+```
+FieldAccess  ::= Expression "." FieldName
+RecordUpdate ::= Expression "." "{" FieldName ":" Expression ("⟢" FieldName ":" Expression)* "}"
+```
+
+Both are postfix forms at the same level as `Application` and `IndexExpr`
+(§7.2, §7.9), so they chain: `f(x).a.b`, `s.items[0].name`, `p.{x: 1}.y`.
+`.` is the one token that separates a record from its field; a `Real`
+literal is still lexed whole (`1.5`), so `a.b` and `1.5` never collide.
+`FieldName` is a lowercase identifier. Semantics and typing:
+`SEMANTIC_CORE.md` §9.3.
+
 ### 7.9 `ArrayExpression` — `Array<T>` slice
 
 `SEMANTIC_CORE.md` §9.1 resolved `Array<T>`'s *semantic* distinction from
@@ -459,10 +485,11 @@ IndexExpr         ::= Expression "[" Expression "]"
   grammar's scope by category, not by absence of a decision.** They
   operate on `Array` values via ordinary `Application`, resolved in
   `GLYPH_SYSTEM_DESIGN.md` §10.5 and implemented as host natives
-  (`crates/obfusku-cli/src/array_native.rs`, `ADR-021`): `⊡`/`⊟`/`⊞`
-  (map/filter/fold) and `#`/`⊙` (length/persistent set). `get` is
-  deliberately not among them — `IndexExpr` (`arr[i]`) already is read
-  access.
+  (`crates/obfusku-cli/src/collection_native.rs`, `ADR-021`, `ADR-025`):
+  `⊡`/`⊟`/`⊞` (map/filter/fold), `#`/`⊙` (length/persistent set),
+  `⊕`/`⍪`/`⌷`/`⍳`/`⊠` (push, concat, slice, range, replicate), `⍋`
+  (sort), `⇋`/`⇌` (to and from `List`). `get` is deliberately not
+  among them — `IndexExpr` (`arr[i]`) already is read access.
 
 ---
 
@@ -603,7 +630,12 @@ SumBody             ::= "{" Variant ("⟢" Variant)* "}"
 Variant             ::= Tag ( "(" Type? ("," Type)* ")" )?
 RecordBody          ::= "{" FieldName ":" Type ("⟢" FieldName ":" Type)* "}"
 TupleBody           ::= "(" Type ("," Type)* ")"
+
+ExceptionDeclaration ::= "☈" Variant
 ```
+
+`ExceptionDeclaration` adds one variant to the open `Exception` type
+(`SEMANTIC_CORE.md` §15.2, `ADR-026`); it is a top-level declaration only.
 
 ```
 Shape ≔ { Circle(Real) ⟢ Rectangle(Real, Real) }

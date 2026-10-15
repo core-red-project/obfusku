@@ -7,7 +7,7 @@
 use obfusku_diagnostics::{Diagnostic, Severity, SourceId, Span};
 use std::iter::Peekable;
 use std::str::CharIndices;
-use unicode_normalization::{is_nfc, UnicodeNormalization};
+use unicode_normalization::{UnicodeNormalization, is_nfc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -31,7 +31,9 @@ pub enum TokenKind {
     ArmSep,  // ⟢ — generic declarative-list separator (§6): TypeBody
     // variants/fields and Match arms alike, per §6's "one
     // generic mechanism reused everywhere" rule.
-    Wildcard, // ASCII '_' alone — reserved, never an ordinary identifier
+    Wildcard,      // ASCII '_' alone — reserved, never an ordinary identifier
+    Dot,           // . (record field access / update)
+    ExceptionDecl, // ☈ (declares a variant of the open `Exception` type)
     // (§10); the lexer recognizes it specially rather than
     // handing the parser an Ident("_") to special-case.
     LParen,
@@ -84,6 +86,22 @@ pub struct Token {
 /// which one an editor happened to save in a different normalization
 /// form).
 pub fn tokenize(source: &str, source_id: SourceId) -> Result<Vec<Token>, Diagnostic> {
+    tokenize_with_comments(source, source_id).map(|(tokens, _)| tokens)
+}
+
+/// A `//` line comment or a `⌈ … ⌉` block comment, with its delimiters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comment {
+    pub span: Span,
+    pub text: String,
+}
+
+/// [`tokenize`], also returning every comment in source order (comments are
+/// not tokens; the formatter re-attaches them to declarations).
+pub fn tokenize_with_comments(
+    source: &str,
+    source_id: SourceId,
+) -> Result<(Vec<Token>, Vec<Comment>), Diagnostic> {
     if let Some(at) = first_non_nfc_offset(source) {
         return Err(Diagnostic {
             severity: Severity::Error,
@@ -99,7 +117,21 @@ pub fn tokenize(source: &str, source_id: SourceId) -> Result<Vec<Token>, Diagnos
             },
         });
     }
-    Lexer::new(source, source_id).run()
+    let mut lexer = Lexer::new(source, source_id);
+    let tokens = lexer.run()?;
+    let comments = lexer
+        .comments
+        .iter()
+        .map(|&(from, to)| Comment {
+            span: Span {
+                source: source_id,
+                start: from as u32,
+                end: to as u32,
+            },
+            text: source[from..to].trim_end().to_string(),
+        })
+        .collect();
+    Ok((tokens, comments))
 }
 
 /// The byte offset of the first character where `source` diverges from
@@ -126,6 +158,8 @@ struct Lexer<'a> {
     source_id: SourceId,
     chars: Peekable<CharIndices<'a>>,
     len: usize,
+    /// Byte ranges of every comment skipped, in source order.
+    comments: Vec<(usize, usize)>,
 }
 
 impl<'a> Lexer<'a> {
@@ -135,6 +169,7 @@ impl<'a> Lexer<'a> {
             source_id,
             chars: source.char_indices().peekable(),
             len: source.len(),
+            comments: Vec::new(),
         }
     }
 
@@ -154,7 +189,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn run(mut self) -> Result<Vec<Token>, Diagnostic> {
+    fn run(&mut self) -> Result<Vec<Token>, Diagnostic> {
         let mut tokens = Vec::new();
         loop {
             self.skip_trivia()?;
@@ -216,16 +251,19 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            if let Some(&(_, '/')) = self.chars.peek() {
+            if let Some(&(from, '/')) = self.chars.peek() {
                 let mut lookahead = self.chars.clone();
                 lookahead.next();
                 if let Some(&(_, '/')) = lookahead.peek() {
-                    while let Some(&(_, c)) = self.chars.peek() {
+                    let mut to = from;
+                    while let Some(&(i, c)) = self.chars.peek() {
                         self.chars.next();
                         if c == '\n' {
                             break;
                         }
+                        to = i + c.len_utf8();
                     }
+                    self.comments.push((from, to));
                     continue;
                 }
             }
@@ -233,14 +271,22 @@ impl<'a> Lexer<'a> {
             if let Some(&(start, '⌈')) = self.chars.peek() {
                 self.chars.next();
                 let mut depth = 1;
+                let mut to = start;
                 while depth > 0 {
                     match self.chars.next() {
-                        Some((_, '⌈')) => depth += 1,
-                        Some((_, '⌉')) => depth -= 1,
-                        Some(_) => {}
+                        Some((i, c @ '⌈')) => {
+                            depth += 1;
+                            to = i + c.len_utf8();
+                        }
+                        Some((i, c @ '⌉')) => {
+                            depth -= 1;
+                            to = i + c.len_utf8();
+                        }
+                        Some((i, c)) => to = i + c.len_utf8(),
                         None => return Err(self.error(start, "unterminated block comment")),
                     }
                 }
+                self.comments.push((start, to));
                 continue;
             }
 
@@ -249,17 +295,61 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
-    fn scan_number(&mut self, start: usize) -> Result<Token, Diagnostic> {
-        let mut end = start;
+    /// Digits of one radix with single `_` separators between digits.
+    fn scan_digits(&mut self, radix: u32, end: &mut usize) {
         while let Some(&(i, c)) = self.chars.peek() {
-            if c.is_ascii_digit() {
+            if c.is_digit(radix) {
                 self.chars.next();
-                end = i + c.len_utf8();
+                *end = i + c.len_utf8();
+            } else if c == '_' {
+                let mut ahead = self.chars.clone();
+                ahead.next();
+                if matches!(ahead.peek(), Some((_, d)) if d.is_digit(radix)) {
+                    self.chars.next();
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
         }
+    }
 
+    fn scan_number(&mut self, start: usize) -> Result<Token, Diagnostic> {
+        let mut end = start;
+        // `0x`/`0b`/`0o` integers (`CONCRETE_SYMBOLIC_GRAMMAR.md` §5).
+        if self.source[start..].starts_with('0') {
+            let radix = match self.source[start + 1..].chars().next() {
+                Some('x' | 'X') => 16,
+                Some('b' | 'B') => 2,
+                Some('o' | 'O') => 8,
+                _ => 0,
+            };
+            if radix != 0 {
+                let mut ahead = self.chars.clone();
+                ahead.next();
+                ahead.next();
+                if matches!(ahead.peek(), Some((_, d)) if d.is_digit(radix)) {
+                    self.chars.next();
+                    self.chars.next();
+                    let digits_start = start + 2;
+                    end = digits_start;
+                    self.scan_digits(radix, &mut end);
+                    let digits: String = self.source[digits_start..end]
+                        .chars()
+                        .filter(|c| *c != '_')
+                        .collect();
+                    let value = i64::from_str_radix(&digits, radix)
+                        .map_err(|_| self.error(start, "integer literal out of range"))?;
+                    return Ok(Token {
+                        kind: TokenKind::Int(value),
+                        span: self.span(start, end),
+                    });
+                }
+            }
+        }
+
+        self.scan_digits(10, &mut end);
         let mut is_real = false;
 
         if let Some(&(_, '.')) = self.chars.peek() {
@@ -268,38 +358,32 @@ impl<'a> Lexer<'a> {
             if matches!(lookahead.peek(), Some((_, d)) if d.is_ascii_digit()) {
                 is_real = true;
                 self.chars.next(); // consume '.'
-                while let Some(&(i, c)) = self.chars.peek() {
-                    if c.is_ascii_digit() {
-                        self.chars.next();
-                        end = i + c.len_utf8();
-                    } else {
-                        break;
-                    }
-                }
+                self.scan_digits(10, &mut end);
             }
         }
 
-        // §5: `RealLiteral`'s exponent suffix is only reachable *after*
-        // the mandatory `"." digit+` fractional part — `IntLiteral` has
-        // no exponent production at all. Without the `is_real` guard, a
-        // bare `5e10` (no dot) would wrongly lex as one `Real` token
-        // instead of `Int(5)` followed by an `Ident("e10")`.
-        if is_real && matches!(self.chars.peek(), Some((_, 'e')) | Some((_, 'E'))) {
-            self.chars.next();
-            if matches!(self.chars.peek(), Some((_, '+')) | Some((_, '-'))) {
+        // An exponent makes a `Real` with or without a fractional part;
+        // `e` not followed by digits stays the start of an identifier.
+        if matches!(self.chars.peek(), Some((_, 'e' | 'E'))) {
+            let mut ahead = self.chars.clone();
+            ahead.next();
+            if matches!(ahead.peek(), Some((_, '+' | '-'))) {
+                ahead.next();
+            }
+            if matches!(ahead.peek(), Some((_, d)) if d.is_ascii_digit()) {
+                is_real = true;
                 self.chars.next();
-            }
-            while let Some(&(i, c)) = self.chars.peek() {
-                if c.is_ascii_digit() {
+                if matches!(self.chars.peek(), Some((_, '+' | '-'))) {
                     self.chars.next();
-                    end = i + c.len_utf8();
-                } else {
-                    break;
                 }
+                self.scan_digits(10, &mut end);
             }
         }
 
-        let text = &self.source[start..end];
+        let text: String = self.source[start..end]
+            .chars()
+            .filter(|c| *c != '_')
+            .collect();
         if is_real {
             let value: f64 = text
                 .parse()
@@ -309,9 +393,15 @@ impl<'a> Lexer<'a> {
                 span: self.span(start, end),
             })
         } else {
-            let value: i64 = text
-                .parse()
-                .map_err(|_| self.error(start, "invalid integer literal"))?;
+            // 2^63 is only meaningful as the magnitude of `−2^63`; it
+            // lexes as `i64::MIN` and the parser accepts it solely
+            // behind a unary minus.
+            let value: i64 = if text == "9223372036854775808" {
+                i64::MIN
+            } else {
+                text.parse()
+                    .map_err(|_| self.error(start, "integer literal out of range"))?
+            };
             Ok(Token {
                 kind: TokenKind::Int(value),
                 span: self.span(start, end),
@@ -332,7 +422,7 @@ impl<'a> Lexer<'a> {
                     });
                 }
                 // CONCRETE_SYMBOLIC_GRAMMAR.md §5's EscapeSequence
-                // production — exactly these six, nothing else.
+                // production.
                 Some((i, '\\')) => match self.chars.next() {
                     Some((_, '"')) => value.push('"'),
                     Some((_, '\\')) => value.push('\\'),
@@ -340,16 +430,36 @@ impl<'a> Lexer<'a> {
                     Some((_, 't')) => value.push('\t'),
                     Some((_, 'r')) => value.push('\r'),
                     Some((_, '0')) => value.push('\0'),
+                    Some((_, 'u')) => value.push(self.scan_unicode_escape(i)?),
                     Some((_, other)) => {
                         return Err(
                             self.error(i, format!("unsupported escape sequence '\\{other}'"))
-                        )
+                        );
                     }
                     None => return Err(self.error(start, "unterminated string literal")),
                 },
                 Some((_, c)) => value.push(c),
             }
         }
+    }
+
+    /// `\u{h…}` — one to six hex digits naming a Unicode scalar value.
+    fn scan_unicode_escape(&mut self, at: usize) -> Result<char, Diagnostic> {
+        if !matches!(self.chars.next(), Some((_, '{'))) {
+            return Err(self.error(at, "expected '{' after '\\u'"));
+        }
+        let mut digits = String::new();
+        loop {
+            match self.chars.next() {
+                Some((_, '}')) => break,
+                Some((_, c)) if c.is_ascii_hexdigit() && digits.len() < 6 => digits.push(c),
+                _ => return Err(self.error(at, "malformed '\\u{…}' escape")),
+            }
+        }
+        u32::from_str_radix(&digits, 16)
+            .ok()
+            .and_then(char::from_u32)
+            .ok_or_else(|| self.error(at, "'\\u{…}' is not a Unicode scalar value"))
     }
 
     fn scan_identifier(&mut self, start: usize) -> Token {
@@ -414,9 +524,35 @@ impl<'a> Lexer<'a> {
     /// the parser treats a symbol-led name as a Tag the same way it
     /// treats an uppercase letter.
     fn scan_glyph_ident(&mut self, start: usize, c: char) -> Option<Token> {
+        // `⌭` alone is the bytes type; `⌭` + a role glyph names the byte
+        // twin of the Str/Array operation with that glyph (`ADR-027`).
+        if c == '⌭' {
+            let mut ahead = self.chars.clone();
+            ahead.next();
+            let (len, name) = match ahead.peek() {
+                Some(&(_, r @ ('#' | '⌷' | '⍪' | '⊠' | '⇋' | '⇌' | '⌕' | '⌘' | '⍕'))) => {
+                    (c.len_utf8() + r.len_utf8(), format!("{c}{r}"))
+                }
+                _ => (c.len_utf8(), c.to_string()),
+            };
+            self.chars.next();
+            if len > c.len_utf8() {
+                self.chars.next();
+            }
+            return Some(Token {
+                kind: TokenKind::Ident(name),
+                span: self.span(start, start + len),
+            });
+        }
         let name = match c {
             '⊘' | '⁝' | '⦰' | '⧫' | '✓' | '✗' | '⟐' | '⌿' | '⌽' | '⊡' | '⊟' | '⊞' | '#' | '⊙'
-            | '↗' | '↘' => c.to_string(),
+            | '↗' | '↘' | '⫽' | '⫴' | '⌫' | '∋' | '⍴' | '⊏' | '↦' | '⇝' | '⍕' | '⚑' | '⊕' | '⍪'
+            | '⌷' | '⍳' | '⊠' | '⍋' | '⇋' | '⇌' | '⍬' | '⊎' | '⊖' | '⌕' | '⊛' | '⌸' | '⌹' | '⍭'
+            | '⊌' | '⊝' | '∈' | '⊚' | '⌻' | '⌑' | '➤' | '◇' | '∥' | '⋆' | '⊓' | '⊔' | '⊗' | '∼'
+            | '⋘' | '⋙' | '⊥' | '⊤' | '√' | '⌊' | '⌃' | '⌾' | '⋇' | 'ℯ' | 'ℓ' | '∿' | '∾' | '∠'
+            | '⍥' | '∦' | 'ϖ' | '∞' | '⌶' | '⍂' | '⌯' | '⌮' | '⇧' | '⇩' | '⤳' | '⊢' | '⊣' | '⍸' => {
+                c.to_string()
+            }
             _ => return None,
         };
         self.chars.next();
@@ -445,12 +581,22 @@ impl<'a> Lexer<'a> {
         }
         self.chars.next();
         let mut end = start + c.len_utf8();
-        if let Some(&(i, dir @ ('↑' | '↓'))) = self.chars.peek() {
+        if let Some(&(i, dir @ ('↑' | '↓' | '↯' | '⍰' | '⊕' | '⊖' | '⇄' | '⧉'))) = self.chars.peek()
+        {
             self.chars.next();
             end = i + dir.len_utf8();
-            if let Some(&(i, '⌬')) = self.chars.peek() {
+            // `⌬` file, `⌥` program arguments, `⎈` environment (`ADR-022`),
+            // `⍉` error stream (`ADR-023`), `⌂` directory, `⌭` bytes (`ADR-024`),
+            // `⎙` text stream, `⎚` byte stream, `⌖` terminal, `⧗` wall clock,
+            // `⧖` monotonic clock, `⚀` integer dice, `⚁` real dice (`ADR-027`).
+            if let Some(&(
+                i,
+                medium @ ('⌬' | '⌥' | '⎈' | '⍉' | '⌂' | '⌭' | '⎙' | '⎚' | '⌖' | '⧗' | '⧖' | '⚀'
+                | '⚁'),
+            )) = self.chars.peek()
+            {
                 self.chars.next();
-                end = i + '⌬'.len_utf8();
+                end = i + medium.len_utf8();
             }
         }
         let name = self.source[start..end].to_string();
@@ -500,6 +646,8 @@ impl<'a> Lexer<'a> {
             '≡' => TokenKind::EqEq,
             '≠' => TokenKind::NotEq,
             '☄' => TokenKind::Raise,
+            '☈' => TokenKind::ExceptionDecl,
+            '.' => TokenKind::Dot,
             '☊' => TokenKind::Catch,
             '⟁' => TokenKind::TyInt,
             '⧆' => TokenKind::TyReal,

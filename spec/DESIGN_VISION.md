@@ -240,9 +240,11 @@ Two distinct mechanisms, not one undifferentiated exception system:
 - **Expected failure → `Result<T, E>`.** An ordinary ADT (§4), consumed via
   pattern matching or chained via `▷` combinators. Covers "this can
   reasonably fail" (parse, lookup, divide).
-- **Exceptional failure → a narrow unwind mechanism** for genuine
-  programmer-error conditions (contract violations, unreachable states) —
-  not used for ordinary control flow.
+- **Exceptional failure → an unwind mechanism** over the open
+  `Exception` type, for conditions a caller should not be expected to
+  branch on at every call (contract violations, I/O failures, unreachable
+  states). Programs add typed variants of their own with `☈`
+  (`ADR-026`). Not used for ordinary control flow.
 
 
 ---

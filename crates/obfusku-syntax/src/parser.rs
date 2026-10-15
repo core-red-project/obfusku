@@ -20,9 +20,10 @@ use obfusku_diagnostics::{Diagnostic, Severity, SourceId, Span};
 /// any general "not a letter" rule, since combinator glyphs (`⟐`, `⌿`,
 /// `⌽`) are ordinary value-level names and must NOT be treated as Tags.
 fn starts_uppercase(name: &str) -> bool {
-    name.chars()
-        .next()
-        .is_some_and(|c| c.is_uppercase() || matches!(c, '⊘' | '⁝' | '⦰' | '⧫' | '✓' | '✗'))
+    name == "⌭"
+        || name.chars().next().is_some_and(|c| {
+            c.is_uppercase() || matches!(c, '⊘' | '⁝' | '⦰' | '⧫' | '✓' | '✗' | '⌑' | '➤' | '◇')
+        })
 }
 
 /// The reserved-invalid combination `CONCRETE_SYMBOLIC_GRAMMAR.md`
@@ -46,7 +47,11 @@ fn scan_argument_conflict(arg: &Argument, has_ref: &mut bool, has_hole: &mut boo
 }
 
 fn scan_stage_conflict(expr: &Expression, has_ref: &mut bool, has_hole: &mut bool) {
-    use Expression::*;
+    use Expression::{
+        Application, ArrayLiteral, BinaryOp, Bool, Catch, ExplicitRef, Field, Index, Int, Lambda,
+        LocalFunctions, LocalValue, Match, NamedConstruction, Pipe, PipeRef, Raise, Real, Rebind,
+        Reference, Str, UnaryOp, Unit, Update,
+    };
     match expr {
         PipeRef(_) => *has_ref = true,
         Int(..) | Real(..) | Str(..) | Bool(..) | Unit(..) | Reference(..) | ExplicitRef(..) => {}
@@ -103,6 +108,13 @@ fn scan_stage_conflict(expr: &Expression, has_ref: &mut bool, has_hole: &mut boo
             scan_stage_conflict(array, has_ref, has_hole);
             scan_stage_conflict(index, has_ref, has_hole);
         }
+        Field { base, .. } => scan_stage_conflict(base, has_ref, has_hole),
+        Update { base, fields, .. } => {
+            scan_stage_conflict(base, has_ref, has_hole);
+            for (_, e) in fields {
+                scan_stage_conflict(e, has_ref, has_hole);
+            }
+        }
     }
 }
 
@@ -111,6 +123,8 @@ pub fn parse(tokens: &[Token], source_id: SourceId) -> Result<Module, Vec<Diagno
         tokens,
         pos: 0,
         source_id,
+        depth: 0,
+        links: 0,
     }
     .parse_module()
 }
@@ -122,9 +136,41 @@ struct Parser<'a> {
     pos: usize,
     #[allow(dead_code)] // will anchor future multi-file diagnostics
     source_id: SourceId,
+    /// Open nested expressions, patterns and types.
+    depth: usize,
+    /// Operators and calls chained so far in the current declaration.
+    links: usize,
 }
 
-impl<'a> Parser<'a> {
+/// Later passes recurse over the tree; deeper source gets a diagnostic
+/// instead of a stack overflow.
+const MAX_NESTING: usize = 2048;
+const MAX_CHAIN: usize = 100_000;
+
+impl Parser<'_> {
+    /// One more operator or call in the current declaration's chains.
+    fn link(&mut self) -> PResult<()> {
+        self.links += 1;
+        if self.links > MAX_CHAIN {
+            return Err(self.error(format!(
+                "more than {MAX_CHAIN} chained operators or calls in one declaration; split it up"
+            )));
+        }
+        Ok(())
+    }
+
+    fn nested<T>(&mut self, f: impl FnOnce(&mut Self) -> PResult<T>) -> PResult<T> {
+        if self.depth >= MAX_NESTING {
+            return Err(self.error(format!(
+                "nesting is deeper than {MAX_NESTING} levels; split the expression into named bindings"
+            )));
+        }
+        self.depth += 1;
+        let out = f(self);
+        self.depth -= 1;
+        out
+    }
+
     fn peek(&self) -> &TokenKind {
         &self.tokens[self.pos].kind
     }
@@ -172,6 +218,7 @@ impl<'a> Parser<'a> {
             if matches!(self.peek(), TokenKind::Eof) {
                 return Err(self.error("expected '❧' to close the module, found end of input"));
             }
+            self.links = 0;
             declarations.push(self.parse_declaration()?);
         }
     }
@@ -188,20 +235,24 @@ impl<'a> Parser<'a> {
         if matches!(self.peek(), TokenKind::Import) {
             return self.parse_import_declaration();
         }
+        // `ExceptionDeclaration ::= "☈" Variant` (`ADR-026`).
+        if matches!(self.peek(), TokenKind::ExceptionDecl) {
+            self.advance();
+            return Ok(Declaration::Exception(self.parse_variant()?));
+        }
 
         let name_span = self.peek_span();
-        let name = match self.peek().clone() {
-            TokenKind::Ident(name) => {
-                self.advance();
-                name
-            }
-            other => {
-                return Err(self.error(format!(
+        let name =
+            match self.peek().clone() {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    name
+                }
+                other => return Err(self.error(format!(
                     "expected a declaration (identifier followed by '≔', 'λname(...)', or '❧'), \
                      found {other:?}"
-                )))
-            }
-        };
+                ))),
+            };
 
         if starts_uppercase(&name) {
             return self.parse_type_declaration(name, name_span);
@@ -251,7 +302,9 @@ impl<'a> Parser<'a> {
                 name
             }
             other => {
-                return Err(self.error(format!("expected a module name after '⟲', found {other:?}")))
+                return Err(
+                    self.error(format!("expected a module name after '⟲', found {other:?}"))
+                );
             }
         };
         let span = start.merge(name_span);
@@ -280,7 +333,7 @@ impl<'a> Parser<'a> {
             return self.parse_tuple_body(tag, tag_span, type_params);
         }
         self.expect(&TokenKind::LBrace, "'{' or '(' to start the type's body")?;
-        if matches!(self.peek(), TokenKind::Ident(ref n) if !starts_uppercase(n)) {
+        if matches!(self.peek(), TokenKind::Ident(n) if !starts_uppercase(n)) {
             return self.parse_record_body(tag, tag_span, type_params);
         }
         let mut variants = vec![self.parse_variant()?];
@@ -382,7 +435,7 @@ impl<'a> Parser<'a> {
                 name
             }
             other => {
-                return Err(self.error(format!("expected a variant name (Tag), found {other:?}")))
+                return Err(self.error(format!("expected a variant name (Tag), found {other:?}")));
             }
         };
         let mut fields = Vec::new();
@@ -409,6 +462,10 @@ impl<'a> Parser<'a> {
     /// §9: `Type ::= BaseType | Tag | FunctionType | TypeApplication |
     /// "(" Type ")"`. Descends `→` first (loosest), then `▷` (tighter).
     fn parse_type_ref(&mut self) -> PResult<TypeRef> {
+        self.nested(Self::parse_type_ref_unguarded)
+    }
+
+    fn parse_type_ref_unguarded(&mut self) -> PResult<TypeRef> {
         self.parse_function_type()
     }
 
@@ -485,6 +542,10 @@ impl<'a> Parser<'a> {
     /// (local `FunctionDeclaration`) differ only in whether a name
     /// follows `λ` directly.
     fn parse_expression(&mut self) -> PResult<Expression> {
+        self.nested(Self::parse_expression_unguarded)
+    }
+
+    fn parse_expression_unguarded(&mut self) -> PResult<Expression> {
         if let TokenKind::Ident(name) = self.peek().clone() {
             if !starts_uppercase(&name) && matches!(self.peek_at(1), TokenKind::Bind) {
                 return self.parse_local_value_binding();
@@ -590,6 +651,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_or()?;
         while matches!(self.peek(), TokenKind::Pipe) {
             self.advance();
+            self.link()?;
             let stage = self.parse_stage()?;
             let span = expr.span().merge(stage.span());
             expr = Expression::Pipe {
@@ -609,6 +671,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_xor()?;
         while matches!(self.peek(), TokenKind::Or) {
             self.advance();
+            self.link()?;
             let rhs = self.parse_xor()?;
             let span = expr.span().merge(rhs.span());
             expr = Expression::BinaryOp {
@@ -625,6 +688,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_and()?;
         while matches!(self.peek(), TokenKind::Xor) {
             self.advance();
+            self.link()?;
             let rhs = self.parse_and()?;
             let span = expr.span().merge(rhs.span());
             expr = Expression::BinaryOp {
@@ -641,6 +705,7 @@ impl<'a> Parser<'a> {
         let mut expr = self.parse_equality()?;
         while matches!(self.peek(), TokenKind::And) {
             self.advance();
+            self.link()?;
             let rhs = self.parse_equality()?;
             let span = expr.span().merge(rhs.span());
             expr = Expression::BinaryOp {
@@ -719,6 +784,7 @@ impl<'a> Parser<'a> {
                 _ => break,
             };
             self.advance();
+            self.link()?;
             let rhs = self.parse_multiplicative()?;
             let span = expr.span().merge(rhs.span());
             expr = Expression::BinaryOp {
@@ -741,6 +807,7 @@ impl<'a> Parser<'a> {
                 _ => break,
             };
             self.advance();
+            self.link()?;
             let rhs = self.parse_unary()?;
             let span = expr.span().merge(rhs.span());
             expr = Expression::BinaryOp {
@@ -763,6 +830,10 @@ impl<'a> Parser<'a> {
             _ => return self.parse_application(),
         };
         let start = self.advance().span;
+        if op == UnOp::Neg && matches!(self.peek(), TokenKind::Int(i64::MIN)) {
+            let lit = self.advance().span;
+            return Ok(Expression::Int(i64::MIN, start.merge(lit)));
+        }
         let operand = self.parse_unary()?;
         let span = start.merge(operand.span());
         Ok(Expression::UnaryOp {
@@ -800,6 +871,9 @@ impl<'a> Parser<'a> {
         // Greedy (§7.2): `(` continues Application, `[` continues
         // IndexExpr (§7.9) — same loop, so `f(x)[i]`/`arr[i][j]` chain.
         loop {
+            if matches!(self.peek(), TokenKind::LParen | TokenKind::LBracket) {
+                self.link()?;
+            }
             if matches!(self.peek(), TokenKind::LParen) {
                 self.advance();
                 if matches!(self.peek(), TokenKind::RParen) {
@@ -821,6 +895,55 @@ impl<'a> Parser<'a> {
                     args,
                     span,
                 };
+            } else if matches!(self.peek(), TokenKind::Dot) {
+                self.advance();
+                match self.peek().clone() {
+                    TokenKind::Ident(name) if !starts_uppercase(&name) => {
+                        let end = self.advance().span;
+                        let span = expr.span().merge(end);
+                        expr = Expression::Field {
+                            base: Box::new(expr),
+                            name,
+                            span,
+                        };
+                    }
+                    TokenKind::LBrace => {
+                        self.advance();
+                        let mut fields = Vec::new();
+                        loop {
+                            let name = match self.peek().clone() {
+                                TokenKind::Ident(n) if !starts_uppercase(&n) => {
+                                    self.advance();
+                                    n
+                                }
+                                other => {
+                                    return Err(self
+                                        .error(format!("expected a field name, found {other:?}")));
+                                }
+                            };
+                            self.expect(&TokenKind::Colon, "':'")?;
+                            let value = self.parse_expression()?;
+                            fields.push((name, value));
+                            if matches!(self.peek(), TokenKind::ArmSep) {
+                                self.advance();
+                                continue;
+                            }
+                            break;
+                        }
+                        let end = self.expect(&TokenKind::RBrace, "'}'")?;
+                        let span = expr.span().merge(end);
+                        expr = Expression::Update {
+                            base: Box::new(expr),
+                            fields,
+                            span,
+                        };
+                    }
+                    other => {
+                        return Err(self.error(format!(
+                            "expected a field name or '{{' after '.', found {other:?}"
+                        )));
+                    }
+                }
             } else if matches!(self.peek(), TokenKind::LBracket) {
                 self.advance();
                 let index = self.parse_expression()?;
@@ -851,6 +974,9 @@ impl<'a> Parser<'a> {
     fn parse_primary(&mut self) -> PResult<Expression> {
         let span = self.peek_span();
         match self.peek().clone() {
+            TokenKind::Int(i64::MIN) => Err(self.error(
+                "9223372036854775808 is out of range as a literal; write −9223372036854775808",
+            )),
             TokenKind::Int(v) => {
                 self.advance();
                 Ok(Expression::Int(v, span))
@@ -993,18 +1119,17 @@ impl<'a> Parser<'a> {
     fn parse_function_declaration(&mut self) -> PResult<Declaration> {
         let start = self.advance().span; // consume 'λ'
         let name_span = self.peek_span();
-        let name = match self.peek().clone() {
-            TokenKind::Ident(name) => {
-                self.advance();
-                name
-            }
-            other => {
-                return Err(self.error(format!(
+        let name =
+            match self.peek().clone() {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    name
+                }
+                other => return Err(self.error(format!(
                     "expected a function name after 'λ' (a bare 'λ(...)' is an anonymous Lambda, \
                      not valid as a top-level declaration), found {other:?}"
-                )))
-            }
-        };
+                ))),
+            };
         self.expect(&TokenKind::LParen, "'(' after the function name")?;
         if matches!(self.peek(), TokenKind::RParen) {
             return Err(self.error(
@@ -1189,11 +1314,18 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_pattern(&mut self) -> PResult<Pattern> {
+        self.nested(Self::parse_pattern_unguarded)
+    }
+
+    fn parse_pattern_unguarded(&mut self) -> PResult<Pattern> {
         let span = self.peek_span();
         match self.peek().clone() {
             TokenKind::Wildcard => {
                 self.advance();
                 Ok(Pattern::Wildcard(span))
+            }
+            TokenKind::Int(i64::MIN) => {
+                Err(self.error("9223372036854775808 is out of range as a literal"))
             }
             TokenKind::Int(v) => {
                 self.advance();

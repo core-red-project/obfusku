@@ -1,6 +1,7 @@
 //! Core expression and pattern grammar — `spec/SEMANTIC_CORE.md` §1.
 
 use obfusku_diagnostics::Span;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
@@ -50,7 +51,7 @@ pub enum Expr {
         /// module-unique (desugar's per-parameter-list renaming), so
         /// `lambda_param_vars` safely caches it for the checker's lifetime.
         param_ty: Option<crate::types::Type>,
-        body: Box<Expr>,
+        body: Rc<Expr>,
         span: Span,
     },
     Apply {
@@ -100,7 +101,7 @@ pub enum Expr {
     Catch {
         body: Box<Expr>,
         handler_param: String,
-        handler_body: Box<Expr>,
+        handler_body: Rc<Expr>,
         span: Span,
     },
     /// §20.2 — evaluates `lhs` then `rhs`, no short-circuiting.
@@ -120,14 +121,14 @@ pub enum Expr {
     Let {
         name: String,
         value: Box<Expr>,
-        body: Box<Expr>,
+        body: Rc<Expr>,
         span: Span,
     },
     /// §11 — every member is in scope within every other member's value
     /// and in `body`. Every member's value must be a `Lambda`.
     LetRec {
         bindings: Vec<Binding>,
-        body: Box<Expr>,
+        body: Rc<Expr>,
         span: Span,
     },
     /// §9.2 — elements evaluate strictly, left to right.
@@ -142,9 +143,26 @@ pub enum Expr {
         index: Box<Expr>,
         span: Span,
     },
+    /// Record field read — `base.name`. Resolved against the record
+    /// declaration (`VariantDecl::field_names`) by the type checker, and
+    /// by tag at runtime; a record is a one-variant ADT, so this is
+    /// sugar over positional access, not a second data representation.
+    Field {
+        base: Box<Expr>,
+        name: String,
+        span: Span,
+    },
+    /// Persistent record update — `base.{name: value, …}` yields a new
+    /// value of the same record with the listed fields replaced.
+    Update {
+        base: Box<Expr>,
+        fields: Vec<(String, Expr)>,
+        span: Span,
+    },
 }
 
 impl Expr {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             Expr::Var(_, s) | Expr::Lit(_, s) => *s,
@@ -157,6 +175,7 @@ impl Expr {
             Expr::BinaryOp { span: s, .. } | Expr::UnaryOp { span: s, .. } => *s,
             Expr::Let { span: s, .. } | Expr::LetRec { span: s, .. } => *s,
             Expr::ArrayLiteral { span: s, .. } | Expr::Index { span: s, .. } => *s,
+            Expr::Field { span: s, .. } | Expr::Update { span: s, .. } => *s,
         }
     }
 }
@@ -164,7 +183,7 @@ impl Expr {
 #[derive(Debug, Clone)]
 pub struct MatchArm {
     pub pattern: Pattern,
-    pub result: Expr,
+    pub result: Rc<Expr>,
     pub span: Span,
 }
 
@@ -184,6 +203,7 @@ pub enum Pattern {
 }
 
 impl Pattern {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             Pattern::Var(_, s) | Pattern::Wildcard(s) | Pattern::Lit(_, s) => *s,
@@ -219,6 +239,9 @@ pub struct TypeDecl {
 pub struct VariantDecl {
     pub tag: String,
     pub fields: Vec<crate::types::Type>,
+    /// `Some(names)` — one per field, in declared order — only for a
+    /// record's single variant; `None` for sum variants and tuples.
+    pub field_names: Option<Vec<String>>,
     pub span: Span,
 }
 
@@ -238,6 +261,7 @@ pub enum BindingGroup {
 }
 
 impl BindingGroup {
+    #[must_use]
     pub fn bindings(&self) -> &[Binding] {
         match self {
             BindingGroup::Let(b) => std::slice::from_ref(b),

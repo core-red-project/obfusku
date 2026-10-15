@@ -16,19 +16,108 @@ use obfusku_syntax::ast::{
     Argument, BaseType, BinOp, Declaration, Expression, FnParameter, FunctionDeclaration, Module,
     Parameter, Pattern, Stage, TypeDeclaration, TypeRef, UnOp, ValueDeclaration, VariantDecl,
 };
+use obfusku_syntax::lexer::Comment;
+use std::fmt::Write as _;
 
 const SUB: &str = "\u{2620}\u{FE0E}"; // ☠︎ (binary subtract)
 const REBIND: &str = "\u{2699}\u{FE0E}"; // ⚙︎
 
-/// Format a surface module back to canonical source text.
+/// Format a surface module back to canonical source text. Comments are
+/// not part of the AST; use [`format_with_comments`] to keep them.
+#[must_use]
 pub fn format(module: &Module) -> String {
+    format_with_comments(module, &[], "")
+}
+
+/// [`format`] that keeps every comment of `source`. A comment between
+/// declarations stays between them; one on the same line after a declaration
+/// stays on that line; one inside a declaration is moved to just above it.
+/// A blank line in the source before a declaration (or its leading
+/// comments) is kept as one blank line.
+#[must_use]
+pub fn format_with_comments(module: &Module, comments: &[Comment], source: &str) -> String {
     let mut out = String::new();
+    let mut next = 0; // index into `comments`: all earlier ones are emitted
+    let mut previous_end = 0usize;
     for decl in &module.declarations {
+        let span = decl.span();
+        let (start, end) = (span.start as usize, span.end as usize);
+        let first = next;
+        while next < comments.len() && (comments[next].span.start as usize) < end {
+            next += 1;
+        }
+        for c in &comments[first..next] {
+            if !out.is_empty() && has_blank_line(source, previous_end, c.span.start as usize) {
+                out.push('\n');
+            }
+            out.push_str(&c.text);
+            out.push('\n');
+            previous_end = c.span.end as usize;
+        }
+        let decl_start = start.max(previous_end);
+        if !out.is_empty() && has_blank_line(source, previous_end, decl_start) {
+            out.push('\n');
+        }
         print_declaration(&mut out, decl, 0);
+        // A comment on the declaration's last line stays there.
+        while next < comments.len() {
+            let from = comments[next].span.start as usize;
+            let same_line = from >= end
+                && source
+                    .get(end..from)
+                    .is_some_and(|gap| !gap.contains('\n') && !comments[next].text.contains('\n'));
+            if !same_line {
+                break;
+            }
+            out.push(' ');
+            out.push_str(&comments[next].text);
+            next += 1;
+        }
+        out.push('\n');
+        previous_end = end;
+    }
+    for c in &comments[next..] {
+        out.push_str(&c.text);
         out.push('\n');
     }
     out.push('\u{2767}'); // ❧
     out.push('\n');
+    out
+}
+
+/// Is there an empty line in `source[from..to]`?
+fn has_blank_line(source: &str, from: usize, to: usize) -> bool {
+    source.get(from..to).is_some_and(|gap| {
+        let mut newlines = 0;
+        for c in gap.chars() {
+            match c {
+                '\n' => newlines += 1,
+                c if c.is_whitespace() => {}
+                _ => newlines = 0,
+            }
+            if newlines >= 2 {
+                return true;
+            }
+        }
+        false
+    })
+}
+
+thread_local! {
+    /// How many arms deep the expression being printed is; sets the
+    /// indentation of nested `⟡` arms and of local-binding continuations.
+    static DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn depth() -> usize {
+    DEPTH.with(std::cell::Cell::get)
+}
+
+/// Prints `f` one arm level deeper.
+fn nested<T>(f: impl FnOnce() -> T) -> T {
+    DEPTH.with(|d| d.set(d.get() + 1));
+    let out = f();
+    DEPTH.with(|d| d.set(d.get() - 1));
     out
 }
 
@@ -47,6 +136,12 @@ fn print_declaration(out: &mut String, decl: &Declaration, level: usize) {
             indent(out, level);
             out.push('\u{27F2}'); // ⟲
             out.push_str(&id.module_name);
+        }
+        Declaration::Exception(v) => {
+            indent(out, level);
+            out.push('\u{2608}'); // ☈
+            out.push(' ');
+            print_variant(out, v);
         }
     }
 }
@@ -196,7 +291,15 @@ fn print_type_ref(out: &mut String, ty: &TypeRef) {
         TypeRef::Apply(lhs, rhs, _) => {
             print_type_ref(out, lhs);
             out.push_str(" \u{25B7} "); // ▷
-            print_type_operand(out, rhs, true);
+            // `▷` is left-associative: `Optional ▷ List ▷ ⟁` would be
+            // `(Optional ▷ List) ▷ ⟁`, so an applied right operand is grouped.
+            if matches!(**rhs, TypeRef::Apply(..)) {
+                out.push('(');
+                print_type_ref(out, rhs);
+                out.push(')');
+            } else {
+                print_type_operand(out, rhs, true);
+            }
         }
     }
 }
@@ -285,7 +388,12 @@ fn expr_prec(e: &Expression) -> Prec {
 /// Prints `e` as an operand requiring at least `min_prec` to appear
 /// bare, parenthesizing otherwise.
 fn print_operand(out: &mut String, e: &Expression, min_prec: Prec) {
-    if expr_prec(e) < min_prec {
+    let is_local = matches!(
+        e,
+        Expression::LocalValue { .. } | Expression::LocalFunctions { .. }
+    );
+    // A local chain brings its own parentheses.
+    if expr_prec(e) < min_prec && !is_local {
         out.push('(');
         print_expression(out, e, Prec::Bottom);
         out.push(')');
@@ -296,6 +404,7 @@ fn print_operand(out: &mut String, e: &Expression, min_prec: Prec) {
 
 fn print_expression(out: &mut String, e: &Expression, min_prec: Prec) {
     match e {
+        Expression::Int(i64::MIN, _) => out.push_str("−9223372036854775808"),
         Expression::Int(v, _) => out.push_str(&v.to_string()),
         Expression::Real(v, _) => out.push_str(&format_real(*v)),
         Expression::Str(v, _) => print_string_literal(out, v),
@@ -344,6 +453,26 @@ fn print_expression(out: &mut String, e: &Expression, min_prec: Prec) {
             out.push(']');
         }
 
+        Expression::Field { base, name, .. } => {
+            print_operand(out, base, Prec::ATOM);
+            out.push('.');
+            out.push_str(name);
+        }
+
+        Expression::Update { base, fields, .. } => {
+            print_operand(out, base, Prec::ATOM);
+            out.push_str(".{ ");
+            for (i, (name, value)) in fields.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(" \u{27E2} "); // ⟢
+                }
+                out.push_str(name);
+                out.push_str(": ");
+                print_expression(out, value, Prec::Bottom);
+            }
+            out.push_str(" }");
+        }
+
         Expression::ArrayLiteral { elements, .. } => {
             out.push('[');
             for (i, elem) in elements.iter().enumerate() {
@@ -378,7 +507,9 @@ fn print_expression(out: &mut String, e: &Expression, min_prec: Prec) {
                 out.push('˚');
             }
             out.push_str(name);
-            out.push_str(&format!(" {REBIND} "));
+            out.push(' ');
+            out.push_str(REBIND);
+            out.push(' ');
             print_expression(out, value, Prec::Bottom);
         }
 
@@ -389,16 +520,21 @@ fn print_expression(out: &mut String, e: &Expression, min_prec: Prec) {
             out.push(' ');
             print_operand(out, scrutinee, Prec::ATOM);
             out.push_str(" {\n");
-            for (i, arm) in arms.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(" \u{27E2}\n"); // ⟢
+            let at = depth();
+            nested(|| {
+                for (i, arm) in arms.iter().enumerate() {
+                    if i > 0 {
+                        out.push_str(" \u{27E2}\n"); // ⟢
+                    }
+                    indent(out, at + 1);
+                    print_pattern(out, &arm.pattern);
+                    out.push_str(" \u{2192} "); // →
+                    print_expression(out, &arm.result, Prec::Bottom);
                 }
-                out.push_str("  ");
-                print_pattern(out, &arm.pattern);
-                out.push_str(" \u{2192} "); // →
-                print_expression(out, &arm.result, Prec::Bottom);
-            }
-            out.push_str("\n}");
+            });
+            out.push('\n');
+            indent(out, at);
+            out.push('}');
         }
 
         Expression::BinaryOp { op, lhs, rhs, .. } => {
@@ -453,20 +589,47 @@ fn print_expression(out: &mut String, e: &Expression, min_prec: Prec) {
             out.push_str(" }");
         }
 
-        Expression::LocalValue { decl, body, .. } => {
-            print_value_declaration(out, decl, 0);
-            out.push('\n');
-            print_expression(out, body, Prec::Bottom);
-        }
-
-        Expression::LocalFunctions { decls, body, .. } => {
-            for fd in decls {
-                print_function_declaration(out, fd, 0);
-                out.push('\n');
-            }
-            print_expression(out, body, Prec::Bottom);
+        Expression::LocalValue { .. } | Expression::LocalFunctions { .. } => {
+            print_local_chain(out, e);
         }
     }
+}
+
+/// A run of local bindings and the expression they scope over, always
+/// parenthesized, one binding per line, one arm level deeper:
+/// `(` / `x ≔ …` / `λg(…) → …` / body / `)`.
+fn print_local_chain(out: &mut String, e: &Expression) {
+    out.push_str("(\n");
+    let at = depth();
+    nested(|| {
+        let mut cur = e;
+        loop {
+            match cur {
+                Expression::LocalValue { decl, body, .. } => {
+                    indent(out, at + 1);
+                    print_value_declaration(out, decl, 0);
+                    out.push('\n');
+                    cur = body;
+                }
+                Expression::LocalFunctions { decls, body, .. } => {
+                    for fd in decls {
+                        indent(out, at + 1);
+                        print_function_declaration(out, fd, 0);
+                        out.push('\n');
+                    }
+                    cur = body;
+                }
+                last => {
+                    indent(out, at + 1);
+                    print_expression(out, last, Prec::Bottom);
+                    break;
+                }
+            }
+        }
+    });
+    out.push('\n');
+    indent(out, at);
+    out.push(')');
 }
 
 fn print_binop(out: &mut String, op: BinOp, lhs: &Expression, rhs: &Expression) {
@@ -563,18 +726,38 @@ fn print_pattern(out: &mut String, p: &Pattern) {
     }
 }
 
+/// Source must be NFC (`CONCRETE_SYMBOLIC_GRAMMAR.md` §2), so a literal
+/// whose value holds combining marks is printed with `\u{…}` escapes
+/// rather than raw characters that would not re-lex.
 fn print_string_literal(out: &mut String, s: &str) {
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            other => out.push(other),
+    use unicode_normalization::{char::canonical_combining_class, is_nfc};
+    let render = |escape_all_non_ascii: bool| {
+        let mut lit = String::from('"');
+        for c in s.chars() {
+            match c {
+                '"' => lit.push_str("\\\""),
+                '\\' => lit.push_str("\\\\"),
+                '\n' => lit.push_str("\\n"),
+                '\t' => lit.push_str("\\t"),
+                '\r' => lit.push_str("\\r"),
+                '\0' => lit.push_str("\\0"),
+                c if c.is_control()
+                    || canonical_combining_class(c) != 0
+                    || (escape_all_non_ascii && !c.is_ascii()) =>
+                {
+                    let _ = write!(lit, "\\u{{{:X}}}", u32::from(c));
+                }
+                other => lit.push(other),
+            }
         }
+        lit.push('"');
+        lit
+    };
+    let mut lit = render(false);
+    if !is_nfc(&lit) {
+        lit = render(true);
     }
-    out.push('"');
+    out.push_str(&lit);
 }
 
 fn format_real(v: f64) -> String {

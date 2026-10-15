@@ -16,7 +16,7 @@ fn run_ok(source: &str) -> Value {
             panic!("expected {source:?} to run successfully, got diagnostics: {diags:?}")
         })
         .0
-         .0
+        .0
 }
 
 fn run_err(source: &str) -> Vec<obfusku_diagnostics::Diagnostic> {
@@ -47,7 +47,7 @@ fn real_literal_source_to_runtime_value() {
 
 #[test]
 fn string_literal_source_to_runtime_value() {
-    assert!(matches!(run_ok("x ≔ \"hello\"\n❧"), Value::Str(s) if &*s == "hello"));
+    assert!(matches!(run_ok("x ≔ \"hello\"\n❧"), Value::Str(ref s) if &**s == "hello"));
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn mutable_binding_mutread_mutrebind_and_closure_capture_end_to_end() {
 #[test]
 fn adt_constructor_and_exhaustive_match_end_to_end() {
     let v = run_ok(
-        r#"
+        r"
         Option t ≔ { Some(t) ⟢ None }
         x ≔ Some(5)
         result ≔ ⟡ x {
@@ -144,7 +144,7 @@ fn adt_constructor_and_exhaustive_match_end_to_end() {
           ⟢ None → 0
         }
         ❧
-        "#,
+        ",
     );
     assert_eq!(as_int(v), 5);
 }
@@ -152,7 +152,7 @@ fn adt_constructor_and_exhaustive_match_end_to_end() {
 #[test]
 fn adt_none_case_of_the_same_match_end_to_end() {
     let v = run_ok(
-        r#"
+        r"
         Option t ≔ { Some(t) ⟢ None }
         x ≔ None
         result ≔ ⟡ x {
@@ -160,7 +160,7 @@ fn adt_none_case_of_the_same_match_end_to_end() {
           ⟢ None → 0
         }
         ❧
-        "#,
+        ",
     );
     assert_eq!(as_int(v), 0);
 }
@@ -172,7 +172,7 @@ fn adt_none_case_of_the_same_match_end_to_end() {
 #[test]
 fn optional_end_to_end_no_special_runtime_or_typecheck_path() {
     let v = run_ok(
-        r#"
+        r"
         Optional t ≔ { Some(t) ⟢ None }
         x ≔ Some(42)
         result ≔ ⟡ x {
@@ -180,7 +180,7 @@ fn optional_end_to_end_no_special_runtime_or_typecheck_path() {
           ⟢ None → 0
         }
         ❧
-        "#,
+        ",
     );
     assert_eq!(as_int(v), 42);
 }
@@ -190,7 +190,7 @@ fn result_end_to_end_no_special_runtime_or_typecheck_path() {
     // Err's arm returns `msg`, not a throwaway literal, so both arms
     // unify and pin `e = Int` — `Ok(7)` alone leaves `e` ambiguous.
     let v = run_ok(
-        r#"
+        r"
         Result t e ≔ { Ok(t) ⟢ Err(e) }
         r ≔ Ok(7)
         result ≔ ⟡ r {
@@ -198,7 +198,7 @@ fn result_end_to_end_no_special_runtime_or_typecheck_path() {
           ⟢ Err(msg) → msg
         }
         ❧
-        "#,
+        ",
     );
     assert_eq!(as_int(v), 7);
 }
@@ -391,8 +391,8 @@ fn polymorphism_survives_around_an_actual_letrec_group() {
 }
 
 #[test]
-fn lambda_forward_referencing_a_non_lambda_binding_is_a_documented_limitation_not_a_silent_wrong_answer(
-) {
+fn lambda_forward_referencing_a_non_lambda_binding_is_a_documented_limitation_not_a_silent_wrong_answer()
+ {
     // `f ≔ λ(ignored) → laterVal` is an ordinary ValueDeclaration, never
     // part of any LetRec group — `laterVal` is simply an unbound
     // reference and must be rejected.
@@ -493,8 +493,8 @@ fn cell_invariance_holds_in_a_program_that_also_recurses_over_a_different_cell()
 }
 
 #[test]
-fn mutation_inside_a_self_recursive_letrec_member_is_visible_from_an_ordinary_read_after_it_returns(
-) {
+fn mutation_inside_a_self_recursive_letrec_member_is_visible_from_an_ordinary_read_after_it_returns()
+ {
     // A Bool flag flips inside toggle's recursion; an ordinary read
     // after it returns must see the flip — the real cell, not a copy.
     let source = "Nat ≔ { Zero ⟢ Succ(Nat) }\n\
@@ -555,7 +555,7 @@ fn int_and_real_arithmetic_end_to_end() {
 #[test]
 fn string_concatenation_end_to_end() {
     let v = run_ok("result ≔ \"foo\" ✚ \"bar\"\n❧");
-    assert!(matches!(v, Value::Str(s) if &*s == "foobar"));
+    assert!(matches!(v, Value::Str(ref s) if &**s == "foobar"));
 }
 
 #[test]
@@ -679,9 +679,9 @@ fn raise_is_rejected_when_the_operand_is_not_an_exception() {
 #[test]
 fn catch_handler_receives_the_raised_exception_value() {
     // Match the caught Exception by tag inside the handler.
-    let source = "result ≔ ☊ (☄ Failure(\"oops\", \"bad\")) λ(e) → ⟡ e {\n  Failure(tag, msg) → tag\n  ⟢ DivisionByZero → \"div0\"\n  ⟢ NonExhaustiveMatch → \"nem\"\n  ⟢ InvalidOperation(m) → m\n  ⟢ IntegerOverflow → \"overflow\"\n}\n❧";
+    let source = "result ≔ ☊ (☄ Failure(\"oops\", \"bad\")) λ(e) → ⟡ e {\n  Failure(tag, msg) → tag\n  ⟢ DivisionByZero → \"div0\"\n  ⟢ NonExhaustiveMatch → \"nem\"\n  ⟢ InvalidOperation(m) → m\n  ⟢ IntegerOverflow → \"overflow\"\n  ⟢ _ → \"other\"\n}\n❧";
     let v = run_ok(source);
-    assert!(matches!(v, Value::Str(s) if &*s == "oops"));
+    assert!(matches!(v, Value::Str(ref s) if &**s == "oops"));
 }
 
 // ---------------------------------------------------------------------
@@ -924,9 +924,11 @@ fn bare_generic_tag_with_wrong_arity_is_a_static_arity_error() {
     let source = "List t ≔ { Nil ⟢ Cons(t, List) }\n\
          xs ≔ Cons(1, Nil)\n❧";
     let diags = run_err(source);
-    assert!(diags
-        .iter()
-        .any(|d| d.message.contains("expects 1 type argument")));
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.message.contains("expects 1 type argument"))
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -946,7 +948,7 @@ fn empty_array_literal_end_to_end_context_pins_element_type() {
     // into (and evaluating) the empty array itself.
     let source = "xs ≔ []\nys ≔ [1, 2, 3]\nresult ≔ ⟡ ◉ {\n  ◉ → xs\n  ⟢ ◎ → ys\n}\n❧";
     let v = run_ok(source);
-    match v {
+    match &v {
         Value::Array(elems) => assert!(elems.is_empty()),
         other => panic!("expected an Array, got {other:?}"),
     }
@@ -1015,4 +1017,294 @@ fn an_exported_binding_that_is_not_last_is_not_what_run_reports() {
     // `run`'s reported value if a later, unexported binding follows it.
     let v = run_ok("visible \u{2254}\u{27f3} 1\nlast \u{2254} 2\n\u{2767}\n");
     assert_eq!(as_int(v), 2);
+}
+
+// ---------------------------------------------------------------------
+// Records, generated ordering/rendering, collections, open exceptions
+// (`ADR-025`, `ADR-026`).
+// ---------------------------------------------------------------------
+
+/// The full pipeline (`run_file`): stdlib and natives in scope, unlike
+/// `run_source`.
+fn run_full(source: &str) -> Result<Value, Vec<obfusku_diagnostics::Diagnostic>> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("obfusku-e2e-{}-{n}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("prog.obk");
+    std::fs::write(&file, source).unwrap();
+    let result = obfusku_cli::run_file(&file)
+        .map(|(v, _)| v.0)
+        .map_err(|(_, ds)| ds);
+    let _ = std::fs::remove_dir_all(&dir);
+    result
+}
+
+fn run_full_ok(source: &str) -> Value {
+    run_full(source).unwrap_or_else(|ds| panic!("expected {source:?} to run, got {ds:?}"))
+}
+
+fn run_full_err(source: &str) -> Vec<obfusku_diagnostics::Diagnostic> {
+    run_full(source).expect_err(&format!("expected {source:?} to fail"))
+}
+
+fn run_str(source: &str) -> String {
+    match &run_full_ok(source) {
+        Value::Str(s) => s.to_string(),
+        other => panic!("expected Str, got {other:?}"),
+    }
+}
+
+#[test]
+fn record_field_access_and_update() {
+    let v = run_full_ok(
+        "Point ≔ { x: ⟁ ⟢ y: ⟁ }\np ≔ Point { x: 1 ⟢ y: 2 }\nq ≔ p.{ x: 10 }\n\
+         result ≔ q.x ✚ q.y ✚ p.x\n❧",
+    );
+    assert_eq!(as_int(v), 13);
+}
+
+#[test]
+fn nested_record_access_chains() {
+    let v = run_full_ok(
+        "P ≔ { x: ⟁ }\nS ≔ { a: P ⟢ b: P }\ns ≔ S { a: P { x: 1 } ⟢ b: P { x: 5 } }\n\
+         result ≔ s.b.x ☠︎ s.a.x\n❧",
+    );
+    assert_eq!(as_int(v), 4);
+}
+
+#[test]
+fn unknown_record_field_is_a_type_error() {
+    let ds = run_full_err("P ≔ { x: ⟁ }\np ≔ P { x: 1 }\nresult ≔ p.z\n❧");
+    assert!(ds[0].message.contains("no field") || ds[0].message.contains("field named"));
+}
+
+#[test]
+fn update_with_the_wrong_field_type_is_a_type_error() {
+    let ds = run_full_err("P ≔ { x: ⟁ }\np ≔ P { x: 1 }\nresult ≔ p.{ x: \"s\" }\n❧");
+    assert!(ds[0].message.contains("field 'x'"), "{:?}", ds[0]);
+}
+
+#[test]
+fn ordering_covers_strings_adts_and_nested_values() {
+    assert!(matches!(
+        run_full_ok("result ≔ \"apple\" < \"banana\"\n❧"),
+        Value::Bool(true)
+    ));
+    assert!(matches!(
+        run_full_ok("S ≔ { A(⟁) ⟢ B }\nresult ≔ A(9) < B\n❧"),
+        Value::Bool(true)
+    ));
+    assert!(matches!(
+        run_full_ok("S ≔ { A(⟁) ⟢ B }\nresult ≔ A(1) < A(2)\n❧"),
+        Value::Bool(true)
+    ));
+    // IEEE-754 still governs a bare Real.
+    assert!(matches!(
+        run_full_ok("n ≔ 0.0 ÷ 0.0\nresult ≔ n < 1.0\n❧"),
+        Value::Bool(false)
+    ));
+}
+
+#[test]
+fn ordering_a_function_is_a_type_error_even_through_a_generic() {
+    let ds = run_full_err(
+        "λmax2(a: t, b: t): t → ⟡ (a > b) { ◉ → a ⟢ ◎ → b }\nλf(n: ⟁): ⟁ → n\n\
+         result ≔ max2(f, f)\n❧",
+    );
+    assert!(ds[0].message.contains("ordering"), "{:?}", ds[0]);
+}
+
+#[test]
+fn generic_function_with_an_ordering_constraint_works_at_many_types() {
+    let v = run_full_ok(
+        "λmax2(a: t, b: t): t → ⟡ (a > b) { ◉ → a ⟢ ◎ → b }\n\
+         s ≔ max2(\"a\", \"b\")\nresult ≔ max2(3, 2)\n❧",
+    );
+    assert_eq!(as_int(v), 3);
+}
+
+#[test]
+fn show_renders_records_variants_and_lists_in_source_form() {
+    assert_eq!(
+        run_str("P ≔ { x: ⟁ ⟢ y: ⟁ }\nresult ≔ ⍕(⁝(P { x: 1 ⟢ y: 2 }, ⊘))\n❧"),
+        "⁝(P { x: 1 ⟢ y: 2 }, ⊘)"
+    );
+    assert_eq!(run_str("S ≔ { C(⧆) }\nresult ≔ ⍕(C(1.5))\n❧"), "C(1.5)");
+    assert_eq!(run_str("result ≔ ⍕(\"a\\\"b\")\n❧"), "\"a\\\"b\"");
+}
+
+#[test]
+fn rendering_a_function_is_a_type_error() {
+    let ds = run_full_err("λf(n: ⟁): ⟁ → n\nresult ≔ ⍕(f)\n❧");
+    assert!(ds[0].message.contains("rendering"), "{:?}", ds[0]);
+}
+
+#[test]
+fn array_construction_and_combination() {
+    assert_eq!(
+        run_str("result ≔ ⍕(⊕(⌷(1)(3)(⍪(⍳(3))(⊠(2)(9))))(100))\n❧"),
+        "[1, 2, 9, 100]"
+    );
+    assert_eq!(run_str("result ≔ ⍕(⍋([3, 1, 2]))\n❧"), "[1, 2, 3]");
+}
+
+#[test]
+fn large_array_is_built_and_folded_without_quadratic_copying() {
+    let v = run_full_ok(
+        "big ≔ ⊡(λ(x: ⟁) → x)(⍳(200000))\n\
+         result ≔ ⊞(λ(a: ⟁) → λ(x: ⟁) → a ✚ x)(0)(big)\n❧",
+    );
+    assert_eq!(as_int(v), 19_999_900_000);
+}
+
+#[test]
+fn map_and_set_are_persistent_and_ordered() {
+    assert_eq!(
+        run_str(
+            "m ≔ ⊎(⊎(⍬)(\"b\")(2))(\"a\")(1)\nm2 ≔ ⊖(m)(\"a\")\n\
+             result ≔ ⍕(⁝(⍕(m), ⁝(⍕(m2), ⊘)))\n❧"
+        ),
+        "⁝(\"Map[\\\"a\\\" ↦ 1, \\\"b\\\" ↦ 2]\", ⁝(\"Map[\\\"b\\\" ↦ 2]\", ⊘))"
+    );
+    let v = run_full_ok("s ≔ ⊌(⊌(⍭)(3))(3)\nresult ≔ ⊚(s)\n❧");
+    assert_eq!(as_int(v), 1);
+}
+
+#[test]
+fn map_lookup_returns_an_optional() {
+    let v = run_full_ok("m ≔ ⊎(⍬)(1)(\"one\")\nresult ≔ ⟡ ⌕(m)(1) { ⧫(s) → ⍴(s) ⟢ ⦰ → 0 }\n❧");
+    assert_eq!(as_int(v), 3);
+}
+
+#[test]
+fn map_keys_must_be_orderable() {
+    let ds = run_full_err("λf(n: ⟁): ⟁ → n\nresult ≔ ⊎(⍬)(f)(1)\n❧");
+    assert!(ds[0].message.contains("ordering"), "{:?}", ds[0]);
+}
+
+#[test]
+fn user_declared_exception_is_raised_and_caught_by_variant() {
+    let v = run_full_ok(
+        "☈ NotFound(⌘)\n☈ Bad(⟁, ⌘)\nλfind(k: ⌘): ⟁ → ☄ NotFound(k)\n\
+         result ≔ ☊ find(\"x\") λ(e) → ⟡ e { NotFound(k) → 1 ⟢ Bad(n, m) → n ⟢ _ → 0 }\n❧",
+    );
+    assert_eq!(as_int(v), 1);
+}
+
+#[test]
+fn exception_match_without_a_wildcard_is_rejected_as_open() {
+    let ds = run_full_err("☈ NotFound(⌘)\nresult ≔ ☊ 1 λ(e) → ⟡ e { NotFound(k) → 1 }\n❧");
+    assert!(ds[0].message.contains("open type"), "{:?}", ds[0]);
+}
+
+#[test]
+fn uncaught_user_exception_is_reported_with_its_rendering() {
+    let ds = run_full_err("☈ NotFound(⌘)\nλf(n: ⟁): ⟁ → ☄ NotFound(\"k\")\nresult ≔ f(1)\n❧");
+    assert!(ds[0].message.contains("NotFound(\"k\")"), "{:?}", ds[0]);
+}
+
+#[test]
+fn a_second_program_on_one_thread_sees_its_own_record_layout() {
+    // The runtime keeps declared-type metadata per thread; a later
+    // program redeclaring the same record name must replace it, not
+    // inherit the first program's field order.
+    let a = run_full_ok("A ≔ { x: ⟁ ⟢ y: ⟁ }\nresult ≔ (A { x: 1 ⟢ y: 2 }).y\n❧");
+    let b = run_full_ok("A ≔ { y: ⟁ ⟢ x: ⟁ }\nresult ≔ (A { y: 1 ⟢ x: 2 }).y\n❧");
+    assert_eq!(as_int(a), 2);
+    assert_eq!(as_int(b), 1);
+}
+
+// ── Numbers and text (`ADR-027`) ──────────────────────────────────────
+
+#[test]
+fn the_minimum_integer_is_writable_and_survives_formatting() {
+    let src = "m ≔ −9223372036854775808\nresult ≔ m\n❧";
+    assert_eq!(as_int(run_full_ok(src)), i64::MIN);
+    let mut map = obfusku_diagnostics::SourceMap::new();
+    let id = map.add_file(src);
+    let tokens = obfusku_syntax::lexer::tokenize(src, id).unwrap();
+    let module = obfusku_syntax::parser::parse(&tokens, id).unwrap();
+    assert!(obfusku_fmt::format(&module).contains("−9223372036854775808"));
+    let bare = run_full_err("m ≔ 9223372036854775808\nresult ≔ m\n❧");
+    assert!(bare[0].message.contains("out of range"), "{bare:?}");
+}
+
+#[test]
+fn integer_natives_check_overflow_and_domains() {
+    assert_eq!(
+        as_int(run_full_ok(
+            "result ≔ ⋆(3)(4) ✚ ∥(−5) ✚ ⊓(6)(3) ✚ ⊔(6)(3) ✚ ⊗(6)(3)\n❧"
+        )),
+        81 + 5 + 2 + 7 + 5
+    );
+    assert_eq!(
+        as_int(run_full_ok("result ≔ ⋙(−8)(1) ✚ ⋘(1)(62) ✚ ∼(0)\n❧")),
+        -4 + (1 << 62) - 1
+    );
+    for bad in [
+        "result ≔ ⋆(2)(63)\n❧",
+        "result ≔ ∥(−9223372036854775808)\n❧",
+        "result ≔ ⋆(2)(−1)\n❧",
+        "result ≔ ⋘(1)(64)\n❧",
+    ] {
+        assert!(!run_full_err(bad).is_empty(), "{bad}");
+    }
+    assert_eq!(as_int(run_full_ok("result ≔ ⋆(−2)(63)\n❧")), i64::MIN);
+}
+
+#[test]
+fn min_and_max_use_the_generated_order() {
+    assert_eq!(
+        run_str("result ≔ ⊥(\"pear\")(\"fig\") ✚ ⊤(\"pear\")(\"fig\")\n❧"),
+        "figpear"
+    );
+    assert_eq!(as_int(run_full_ok("result ≔ ⊤(⊥(7)(3))(2)\n❧")), 3);
+    let ds = run_full_err("result ≔ ⊥(λ(x: ⟁) → x)(λ(x: ⟁) → x)\n❧");
+    assert!(!ds.is_empty());
+}
+
+#[test]
+fn real_functions_follow_ieee_and_never_raise() {
+    let v = run_full_ok(
+        "result ≔ ⍕(⌊(−1.5)) ✚ \"|\" ✚ ⍕(⌃(1.2)) ✚ \"|\" ✚ ⍕(⌾(2.5)) ✚ \"|\" ✚ ⍕(⍥(√(−1.0))) ✚ \"|\" ✚ ⍕(⋇(2.0)(10.0)) ✚ \"|\" ✚ ⍕(∞)\n❧",
+    );
+    match &v {
+        Value::Str(s) => assert_eq!(&**s, "\"-2.0|2.0|3.0|◎|1024.0|∞\"".trim_matches('"')),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn text_functions_count_scalars_and_graphemes() {
+    assert_eq!(
+        run_str("result ≔ ⍕(⍸(\"é\")(\"aéé\")) ✚ ⇩(\"ÀB\") ✚ ⍕(⌯(\"A\")) ✚ ⌮(66)\n❧"),
+        "⧫(1)àb65B"
+    );
+    assert_eq!(
+        as_int(run_full_ok(
+            "result ≔ #(⇋(⌶(\"e\\u{301}👍🏽\"))) ✚ #(⇋(⍂(\"e\\u{301}👍🏽\")))\n❧"
+        )),
+        2 + 4
+    );
+    assert!(!run_full_err("result ≔ ⌮(55296)\n❧").is_empty());
+    assert!(!run_full_err("result ≔ ⤳(\"\")(\"x\")(\"abc\")\n❧").is_empty());
+}
+
+#[test]
+fn bytes_are_a_typed_ordered_value() {
+    assert_eq!(run_str("result ≔ ⍕(⌭⌘(\"hi\"))\n❧"), "⌭\"6869\"");
+    assert_eq!(
+        as_int(run_full_ok("result ≔ ⌭#(⌭⍪(⌭⌘(\"ab\"))(⌭⊠(3)(7)))\n❧")),
+        5
+    );
+    assert_eq!(
+        as_int(run_full_ok(
+            "b ≔ ⌭⌘(\"a\")\nresult ≔ ⟡ (b ≡ ⌭⇋([97])) { ◉ → 1 ⟢ ◎ → 0 }\n❧"
+        )),
+        1
+    );
+    let ds = run_full_err("result ≔ ⌭#([1])\n❧");
+    assert!(!ds.is_empty(), "an Array is not bytes");
 }

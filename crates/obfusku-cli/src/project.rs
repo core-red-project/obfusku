@@ -9,18 +9,8 @@
 use obfusku_diagnostics::{Diagnostic, Severity, Span};
 use std::path::{Path, PathBuf};
 
-pub const MANIFEST_FILE_NAME: &str = "obfusku.toml";
-const SUPPORTED_FORMAT: i64 = 1;
-
-/// A validated `obfusku.toml` (`ADR-020`). Unknown fields are tolerated
-/// silently at a supported `format` — this struct only ever reads the
-/// fields it knows about.
-#[derive(Debug, Clone)]
-pub struct Manifest {
-    pub format: i64,
-    pub entry: String,
-    pub name: Option<String>,
-}
+use crate::manifest::EntryRef;
+pub use crate::manifest::{MANIFEST_FILE_NAME, Manifest, load_manifest};
 
 fn manifest_error(manifest_path: &Path, message: impl std::fmt::Display) -> Diagnostic {
     Diagnostic {
@@ -45,8 +35,7 @@ pub fn discover_project_root(start: &Path) -> std::io::Result<Option<PathBuf>> {
     } else {
         canonical
             .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| canonical.clone())
+            .map_or_else(|| canonical.clone(), Path::to_path_buf)
     };
     loop {
         if dir.join(MANIFEST_FILE_NAME).is_file() {
@@ -57,53 +46,6 @@ pub fn discover_project_root(start: &Path) -> std::io::Result<Option<PathBuf>> {
             None => return Ok(None),
         }
     }
-}
-
-/// Reads and validates `<root>/obfusku.toml`. Malformed TOML, a missing
-/// or non-integer `format`, an unsupported `format` value, or a missing
-/// `entry` are all the same class of error (`ADR-020`) — never silently
-/// treated as "no manifest."
-pub fn load_manifest(root: &Path) -> Result<Manifest, Diagnostic> {
-    let manifest_path = root.join(MANIFEST_FILE_NAME);
-    let text = std::fs::read_to_string(&manifest_path)
-        .map_err(|e| manifest_error(&manifest_path, format!("could not read: {e}")))?;
-    let value: toml::Value = text
-        .parse()
-        .map_err(|e| manifest_error(&manifest_path, format!("malformed TOML: {e}")))?;
-    let table = value
-        .as_table()
-        .ok_or_else(|| manifest_error(&manifest_path, "must be a TOML table at the top level"))?;
-
-    let format = table
-        .get("format")
-        .and_then(toml::Value::as_integer)
-        .ok_or_else(|| manifest_error(&manifest_path, "missing or non-integer 'format' field"))?;
-    if format != SUPPORTED_FORMAT {
-        return Err(manifest_error(
-            &manifest_path,
-            format!(
-                "unsupported manifest format {format} (this obfusku binary supports format \
-                 {SUPPORTED_FORMAT})"
-            ),
-        ));
-    }
-
-    let entry = table
-        .get("entry")
-        .and_then(toml::Value::as_str)
-        .ok_or_else(|| manifest_error(&manifest_path, "missing or non-string 'entry' field"))?
-        .to_string();
-
-    let name = table
-        .get("name")
-        .and_then(toml::Value::as_str)
-        .map(str::to_string);
-
-    Ok(Manifest {
-        format,
-        entry,
-        name,
-    })
 }
 
 /// The outcome of searching a Project tree for a module by bare name
@@ -119,9 +61,17 @@ pub enum ModuleSearch {
 
 /// Searches every `.obk` file reachable under `root` for one whose
 /// filename (minus `.obk`) equals `name`.
+#[must_use]
 pub fn find_module(root: &Path, name: &str) -> ModuleSearch {
+    find_module_skipping(root, name, &[])
+}
+
+/// [`find_module`] that does not descend into directories named in `skip`
+/// (a dependency's tests and examples are not importable modules).
+#[must_use]
+pub fn find_module_skipping(root: &Path, name: &str, skip: &[&str]) -> ModuleSearch {
     let mut matches = Vec::new();
-    walk_obk_files(root, &mut |path| {
+    walk_obk_files_skipping(root, skip, &mut |path| {
         if path.file_stem().and_then(|s| s.to_str()) == Some(name) {
             matches.push(path.to_path_buf());
         }
@@ -133,15 +83,28 @@ pub fn find_module(root: &Path, name: &str) -> ModuleSearch {
     }
 }
 
-fn walk_obk_files(dir: &Path, visit: &mut impl FnMut(&Path)) {
+/// Does not follow symlinks (no cycles, no escaping the root) and skips
+/// hidden directories and Cargo's `target`.
+pub(crate) fn walk_obk_files(dir: &Path, visit: &mut impl FnMut(&Path)) {
+    walk_obk_files_skipping(dir, &[], visit);
+}
+
+fn walk_obk_files_skipping(dir: &Path, skip: &[&str], visit: &mut impl FnMut(&Path)) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
-        if path.is_dir() {
-            walk_obk_files(&path, visit);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("obk") {
+        if kind.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.starts_with('.') && name != "target" && !skip.contains(&&*name) {
+                walk_obk_files_skipping(&path, skip, visit);
+            }
+        } else if kind.is_file() && path.extension().and_then(|e| e.to_str()) == Some("obk") {
             visit(&path);
         }
     }
@@ -158,7 +121,7 @@ pub struct EntryPoint {
     pub entry_file: PathBuf,
 }
 
-fn io_diagnostic(path: &Path, e: std::io::Error) -> Diagnostic {
+fn io_diagnostic(path: &Path, e: &std::io::Error) -> Diagnostic {
     Diagnostic {
         severity: Severity::Error,
         message: format!("could not read '{}': {e}", path.display()),
@@ -178,38 +141,63 @@ fn io_diagnostic(path: &Path, e: std::io::Error) -> Diagnostic {
 pub fn resolve_entry_point(path: &Path) -> Result<EntryPoint, Diagnostic> {
     if path.is_dir() {
         let manifest = load_manifest(path)?;
-        match find_module(path, &manifest.entry) {
-            ModuleSearch::Found(entry_file) => Ok(EntryPoint {
-                project_root: path.to_path_buf(),
-                entry_file,
-            }),
-            ModuleSearch::NotFound => Err(manifest_error(
-                &path.join(MANIFEST_FILE_NAME),
-                format!(
-                    "entry module '{}' does not resolve to an existing file under this Project",
-                    manifest.entry
-                ),
-            )),
-            ModuleSearch::Ambiguous(paths) => Err(manifest_error(
-                &path.join(MANIFEST_FILE_NAME),
-                format!(
-                    "entry module '{}' is ambiguous — matches: {}",
-                    manifest.entry,
-                    paths
-                        .iter()
-                        .map(|p| p.display().to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-            )),
-        }
+        let manifest_path = path.join(MANIFEST_FILE_NAME);
+        let entry_file = match &manifest.entry {
+            EntryRef::Path(rel) => {
+                let file = path.join(rel);
+                let inside = file
+                    .canonicalize()
+                    .ok()
+                    .zip(path.canonicalize().ok())
+                    .is_some_and(|(f, r)| f.starts_with(r));
+                if !file.is_file() || !inside || file.extension().is_none_or(|e| e != "obk") {
+                    return Err(manifest_error(
+                        &manifest_path,
+                        format!("entry path '{rel}' is not a '.obk' file inside this Project"),
+                    ));
+                }
+                file
+            }
+            EntryRef::Module(name) => match find_module(path, name) {
+                ModuleSearch::Found(f) => f,
+                ModuleSearch::NotFound => {
+                    return Err(manifest_error(
+                        &manifest_path,
+                        format!(
+                            "entry module '{name}' does not resolve to an existing file under \
+                             this Project"
+                        ),
+                    ));
+                }
+                ModuleSearch::Ambiguous(paths) => {
+                    return Err(manifest_error(
+                        &manifest_path,
+                        format!(
+                            "entry module '{name}' is ambiguous — matches: {}; use [entry] \
+                             path = \"…\" in a format 2 manifest",
+                            paths
+                                .iter()
+                                .map(|p| p.display().to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    ));
+                }
+            },
+        };
+        Ok(EntryPoint {
+            project_root: path.to_path_buf(),
+            entry_file,
+        })
     } else {
         let project_root = discover_project_root(path)
-            .map_err(|e| io_diagnostic(path, e))?
+            .map_err(|e| io_diagnostic(path, &e))?
             .unwrap_or_else(|| {
-                path.parent()
-                    .map(Path::to_path_buf)
-                    .unwrap_or_else(|| PathBuf::from("."))
+                // A bare `main.obk` has the empty path as its parent.
+                match path.parent() {
+                    Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+                    _ => PathBuf::from("."),
+                }
             });
         Ok(EntryPoint {
             project_root,
@@ -249,6 +237,7 @@ pub fn require_project_entry_point(path: &Path) -> Result<EntryPoint, Diagnostic
 /// symlinks, so checking the nearest real ancestor is sufficient —
 /// this is not merely "check the target if it exists," it walks up
 /// until it finds something real to check.
+#[must_use]
 pub fn escapes_root_via_symlink(root_canonical: &Path, resolved: &Path) -> bool {
     let mut probe = resolved.to_path_buf();
     loop {
@@ -258,5 +247,79 @@ pub fn escapes_root_via_symlink(root_canonical: &Path, resolved: &Path) -> bool 
         if !probe.pop() {
             return false;
         }
+    }
+}
+
+/// `*` matches within one path segment, `**` any number of segments.
+fn glob_match(pattern: &[&str], path: &[&str]) -> bool {
+    fn segment(p: &str, s: &str) -> bool {
+        match p.split_once('*') {
+            None => p == s,
+            Some((head, tail)) => {
+                let Some(rest) = s.strip_prefix(head) else {
+                    return false;
+                };
+                (0..=rest.len())
+                    .filter(|i| rest.is_char_boundary(*i))
+                    .any(|i| segment(tail, &rest[i..]))
+            }
+        }
+    }
+    match pattern.split_first() {
+        None => path.is_empty(),
+        Some((&"**", rest)) => (0..=path.len()).any(|i| glob_match(rest, &path[i..])),
+        Some((p, rest)) => path
+            .split_first()
+            .is_some_and(|(s, tail)| segment(p, s) && glob_match(rest, tail)),
+    }
+}
+
+/// The `.obk` files under `root` matching any of `patterns` (relative,
+/// `/`-separated, with `*` and `**`), in path order. Hidden directories and
+/// `target` are never searched.
+#[must_use]
+pub fn matching_files(root: &Path, patterns: &[String]) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    walk_obk_files(root, &mut |p| {
+        let Ok(rel) = p.strip_prefix(root) else {
+            return;
+        };
+        let parts: Vec<String> = rel
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect();
+        let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+        let hit = patterns.iter().any(|pat| {
+            let pat: Vec<&str> = pat.split('/').collect();
+            glob_match(&pat, &parts)
+        });
+        if hit {
+            found.push(p.to_path_buf());
+        }
+    });
+    found.sort();
+    found
+}
+
+#[cfg(test)]
+mod glob_tests {
+    use super::glob_match;
+
+    fn m(p: &str, s: &str) -> bool {
+        glob_match(
+            &p.split('/').collect::<Vec<_>>(),
+            &s.split('/').collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn star_stays_in_a_segment_and_double_star_crosses() {
+        assert!(m("tests/*.obk", "tests/a.obk"));
+        assert!(!m("tests/*.obk", "tests/sub/a.obk"));
+        assert!(m("tests/**/*.obk", "tests/a.obk"));
+        assert!(m("tests/**/*.obk", "tests/x/y/a.obk"));
+        assert!(!m("tests/**/*.obk", "src/a.obk"));
+        assert!(m("**/*_test.obk", "a/b/c_test.obk"));
+        assert!(m("t*t.obk", "test.obk"));
     }
 }
