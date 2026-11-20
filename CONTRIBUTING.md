@@ -46,7 +46,7 @@ For larger features, an issue discussion first avoids wasted effort on both side
 
 Before submitting:
 
-- [ ] The project builds without errors
+- [ ] The project builds without errors (passes the same gate as CI — see `CLAUDE.md`)
 - [ ] Changes are described in [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`
 - [ ] The PR description explains what changed and why
 - [ ] New behavior is covered by tests where applicable
@@ -67,7 +67,7 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/en/
 Accepted types:
 
 | Type       | Use for                                          |
-|------------|--------------------------------------------------|
+|------------|---------------------------------------------------|
 | `feat`     | New functionality                                |
 | `fix`      | Bug fixes                                        |
 | `docs`     | Documentation only                               |
@@ -96,4 +96,4 @@ If something in the codebase is unclear, open an issue with the `question` label
 
 ---
 
-*Obfusku is a Core Red Project. Part of the [Sxnnyside Project](https://sxnnysideproject.com).*
+*Obfusku — A Core Red Project. Part of the [Sxnnyside Project](https://sxnnysideproject.com) ecosystem.*

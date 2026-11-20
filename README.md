@@ -1,10 +1,15 @@
 # Obfusku
 
-![Banner](docs/assets/obfusku-banner.png)
+![Obfusku banner](docs/assets/obfusku-banner.png)
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-[![CI](https://github.com/core-red-project/obfusku/workflows/CI/badge.svg)](https://github.com/core-red-project/obfusku/actions)
+[![CI](https://github.com/core-red-project/obfusku/actions/workflows/ci.yml/badge.svg)](https://github.com/core-red-project/obfusku/actions/workflows/ci.yml)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
+![MSRV](https://img.shields.io/badge/MSRV-1.93-orange)
+[![crates.io](https://img.shields.io/crates/v/obfusku-cli)](https://crates.io/crates/obfusku-cli)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2)](https://discord.gg/h3hhNY8VTE)
+[![Patreon](https://img.shields.io/badge/Patreon-SxnnysideProject-F96854)](https://www.patreon.com/SxnnysideProject)
 
 <p align="center">
   <strong>Symbolic Primacy ✦ Strict Hindley-Milner ✦ Tail-Call Optimized</strong><br>
@@ -34,7 +39,7 @@ Source code is tokenized with multi-byte Unicode preservation, parsed into surfa
 
 > _"Symbols do not merely represent operations—they embody semantics."_
 
-This is a Core Red Project, part of the Sxnnyside Project ecosystem.
+Part of the Core Red Project realm within the Sxnnyside Project ecosystem.
 
 ## Features
 
@@ -119,9 +124,7 @@ This produces a standalone `obfusku` executable at `target/release/obfusku`. Pla
 
 ## Usage
 
-Every command below accepts either a single `.obk` file or an Obfusku
-Project directory (one containing `obfusku.toml`) — a bare file needs no
-manifest at all.
+Every command below accepts either a single `.obk` file or an Obfusku Project directory (one containing `obfusku.toml`) — a bare file needs no manifest at all.
 
 ```bash
 # Run a program or a Project
@@ -147,8 +150,7 @@ obfusku build my-project/
 obfusku repl
 ```
 
-A Project directory needs an `obfusku.toml`. The smallest one names the entry
-module; `format = 2` also declares what the program may use and what it depends on:
+A Project directory needs an `obfusku.toml`. The smallest one names the entry module; `format = 2` also declares what the program may use and what it depends on:
 
 ```toml
 format = 2
@@ -169,12 +171,11 @@ args = true
 utils = { github = "owner/repo", tag = "v1.2.0" }
 ```
 
-`obfusku fetch` pins git dependencies in `obfusku.lock`; `run` never uses the
-network. A denied capability is reported by `obfusku check` before the program runs.
-See [`spec/adr/ADR-029-manifest-format-2-capabilities-and-dependencies.md`](spec/adr/ADR-029-manifest-format-2-capabilities-and-dependencies.md)
-and `examples/project/` for a complete, runnable Project.
+`obfusku fetch` pins git dependencies in `obfusku.lock`; `run` never uses the network. A denied capability is reported by `obfusku check` before the program runs. See [`spec/adr/ADR-029-manifest-format-2-capabilities-and-dependencies.md`](spec/adr/ADR-029-manifest-format-2-capabilities-and-dependencies.md) and `examples/project/` for a complete, runnable Project.
 
 ## Architecture
+
+For a detailed breakdown of components, data flow, and design constraints, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ```
 obfusku/
@@ -199,7 +200,7 @@ Before contributing, read the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under **MIT License** — see the [LICENSE](LICENSE) file for details.
 
 ---
 

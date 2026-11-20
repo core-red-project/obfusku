@@ -1,121 +1,62 @@
-//! source → tokens — `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §2–§5.
+//! Source text to tokens (`spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §2–§5).
 //!
-//! `⚙︎` (rebind) is genuinely two codepoints — U+2699 GEAR followed by
-//! U+FE0E (a text-presentation variation selector) — handled via
-//! explicit two-codepoint lookahead rather than single-`char` dispatch.
+//! **Longest match first.** At each position the scanner tries, in order:
+//! two-codepoint glyphs, fixed glyphs, glyph-spelled names, host effects,
+//! numbers, strings, then identifiers. That order is the grammar's lexical
+//! priority (§2). Fixed glyphs precede identifiers because several (`λ`) are
+//! Unicode-alphabetic and would otherwise be eaten as a name.
+//!
+//! `⚙︎` (rebind) and `☠︎` (binary subtract) are really two codepoints, a base
+//! character plus U+FE0E (the text-presentation selector), so they are found
+//! with explicit two-codepoint lookahead instead of single-`char` dispatch.
+//!
+//! **NFC is checked, not enforced.** Source must be Unicode Normalization
+//! Form C (§2). A non-NFC file is a lexical *error*, never silently
+//! renormalized: two files that look identical must not behave differently
+//! because an editor saved one in another normalization form.
+//!
+//! | Module | Scans |
+//! |---|---|
+//! | `token` | the output types: [`Token`], [`TokenKind`], [`Comment`] |
+//! | `scanner` | the loop, whitespace, comments and identifiers |
+//! | `number` | integer and real literals |
+//! | `string` | string literals and escapes |
+//! | `glyph` | fixed glyphs, glyph-spelled names and host effects |
 
-use obfusku_diagnostics::{Diagnostic, Severity, SourceId, Span};
+mod glyph;
+mod number;
+mod scanner;
+mod string;
+mod token;
+
+pub use token::{Comment, Token, TokenKind};
+
+use obfusku_diagnostics::{Diagnostic, SourceId, Span};
 use std::iter::Peekable;
 use std::str::CharIndices;
 use unicode_normalization::{UnicodeNormalization, is_nfc};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind {
-    Int(i64),
-    Real(f64),
-    Str(String),
-    Bool(bool),
-    Ident(String),
-    Bind,    // ≔
-    Lambda,  // λ
-    Arrow,   // →
-    Pipe,    // ▷
-    PipeRef, // ◈
-    Hole,    // • (§7.2's Argument hole — CONCRETE_SYMBOLIC_GRAMMAR.md §7.2/§12.1)
-    Seal,    // ❧
-    Mut,     // ˚ (postfix on '≔') / ReferenceForm prefix on a name
-    Export,  // ⟳
-    Import,  // ⟲
-    Rebind,  // ⚙︎ (U+2699 U+FE0E)
-    Match,   // ⟡ — match introducer (§11)
-    ArmSep,  // ⟢ — generic declarative-list separator (§6): TypeBody
-    // variants/fields and Match arms alike, per §6's "one
-    // generic mechanism reused everywhere" rule.
-    Wildcard,      // ASCII '_' alone — reserved, never an ordinary identifier
-    Dot,           // . (record field access / update)
-    ExceptionDecl, // ☈ (declares a variant of the open `Exception` type)
-    // (§10); the lexer recognizes it specially rather than
-    // handing the parser an Ident("_") to special-case.
-    LParen,
-    RParen,
-    LBrace,
-    RBrace,
-    LBracket,
-    RBracket,
-    Comma,
-    Colon,
-    Plus,    // ✚
-    Minus,   // ☠︎ (U+2620 U+FE0E) — binary subtract
-    Star,    // ✱
-    Slash,   // ÷
-    Percent, // ⌗ — modulo
-    Neg,     // − (U+2212) — unary negation, distinct glyph from binary Minus
-    Not,     // ¬ — unary logical not
-    Lt,      // <
-    Gt,      // >
-    Le,      // ≤ (ADR-016)
-    Ge,      // ≥ (ADR-016)
-    EqEq,    // ≡ (ADR-016)
-    NotEq,   // ≠ (ADR-016)
-    And,     // ∧
-    Or,      // ∨
-    Xor,     // ⊻
-    Raise,   // ☄
-    Catch,   // ☊
-    // Distinct tokens from `Ident` — `Int` (a Tag) is never confusable
-    // with `⟁` (this token).
-    TyInt,  // ⟁
-    TyReal, // ⧆
-    TyStr,  // ⌘
-    TyBool, // ○
-    TyUnit, // ∅
-    Eof,
-}
-
-#[derive(Debug, Clone)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub span: Span,
-}
-
-/// Tokenize source text. Stops at the first lexical error.
-///
-/// §2: source must be Unicode Normalization Form C — checked once, up
-/// front, over the whole file, rather than silently renormalized (two
-/// byte-identical-looking files must not behave differently depending on
-/// which one an editor happened to save in a different normalization
-/// form).
+/// Tokenizes `source`, stopping at the first lexical error.
 pub fn tokenize(source: &str, source_id: SourceId) -> Result<Vec<Token>, Diagnostic> {
     tokenize_with_comments(source, source_id).map(|(tokens, _)| tokens)
 }
 
-/// A `//` line comment or a `⌈ … ⌉` block comment, with its delimiters.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Comment {
-    pub span: Span,
-    pub text: String,
-}
-
-/// [`tokenize`], also returning every comment in source order (comments are
-/// not tokens; the formatter re-attaches them to declarations).
+/// [`tokenize`], also returning every comment in source order.
+///
+/// Comments are not tokens, so the parser never sees them; the formatter
+/// re-attaches them to declarations by position.
 pub fn tokenize_with_comments(
     source: &str,
     source_id: SourceId,
 ) -> Result<(Vec<Token>, Vec<Comment>), Diagnostic> {
     if let Some(at) = first_non_nfc_offset(source) {
-        return Err(Diagnostic {
-            severity: Severity::Error,
-            message: "source is not in Unicode Normalization Form C (NFC) — \
-                      CONCRETE_SYMBOLIC_GRAMMAR.md §2 requires NFC and treats a \
-                      non-NFC file as a lexical error rather than silently \
-                      renormalizing it"
-                .to_string(),
-            primary: Span {
-                source: source_id,
-                start: at as u32,
-                end: at as u32,
-            },
-        });
+        return Err(Diagnostic::error(
+            "source is not in Unicode Normalization Form C (NFC) — \
+             CONCRETE_SYMBOLIC_GRAMMAR.md §2 requires NFC and treats a \
+             non-NFC file as a lexical error rather than silently \
+             renormalizing it",
+            Span::point(source_id, at as u32),
+        ));
     }
     let mut lexer = Lexer::new(source, source_id);
     let tokens = lexer.run()?;
@@ -123,23 +64,19 @@ pub fn tokenize_with_comments(
         .comments
         .iter()
         .map(|&(from, to)| Comment {
-            span: Span {
-                source: source_id,
-                start: from as u32,
-                end: to as u32,
-            },
+            span: Span::new(source_id, from as u32, to as u32),
             text: source[from..to].trim_end().to_string(),
         })
         .collect();
     Ok((tokens, comments))
 }
 
-/// The byte offset of the first character where `source` diverges from
-/// its own NFC form, or `None` if `source` is already NFC. `is_nfc` alone
-/// would tell us *that* it fails; producing a useful span needs the
-/// actual divergence point, found by comparing char-by-char against the
-/// normalized string (NFC normalization is not purely per-character, but
-/// disagreement always surfaces at some concrete character position).
+/// The byte offset where `source` first diverges from its own NFC form, or
+/// `None` if it is already NFC.
+///
+/// `is_nfc` alone says *that* it fails; a useful span needs *where*. NFC is
+/// not purely per-character, but disagreement always surfaces at some
+/// concrete character, found by comparing against the normalized text.
 fn first_non_nfc_offset(source: &str) -> Option<usize> {
     if is_nfc(source) {
         return None;
@@ -153,6 +90,7 @@ fn first_non_nfc_offset(source: &str) -> Option<usize> {
         .or(Some(0))
 }
 
+/// Scanner state, shared by the `impl` blocks in the submodules.
 struct Lexer<'a> {
     source: &'a str,
     source_id: SourceId,
@@ -174,492 +112,110 @@ impl<'a> Lexer<'a> {
     }
 
     fn span(&self, start: usize, end: usize) -> Span {
-        Span {
-            source: self.source_id,
-            start: start as u32,
-            end: end as u32,
-        }
+        Span::new(self.source_id, start as u32, end as u32)
     }
 
     fn error(&self, at: usize, message: impl Into<String>) -> Diagnostic {
-        Diagnostic {
-            severity: Severity::Error,
-            message: message.into(),
-            primary: self.span(at, at),
-        }
+        Diagnostic::error(message, self.span(at, at))
     }
+}
 
-    fn run(&mut self) -> Result<Vec<Token>, Diagnostic> {
-        let mut tokens = Vec::new();
-        loop {
-            self.skip_trivia()?;
-            let Some(&(start, c)) = self.chars.peek() else {
-                tokens.push(Token {
-                    kind: TokenKind::Eof,
-                    span: self.span(self.len, self.len),
-                });
-                break;
-            };
+/// Helpers for the unit tests of this module group.
+#[cfg(test)]
+mod testing {
+    use super::*;
 
-            // Try multi-codepoint/multi-character glyphs before
-            // single-char ones — longest-match-first, per §2's stated
-            // lexical priority.
-            if let Some(tok) = self.scan_variation_selector_glyph(start, c) {
-                tokens.push(tok);
-                continue;
-            }
-            // Try fixed glyphs first — several (notably 'λ') are
-            // Unicode-alphabetic and would otherwise be mis-scanned as
-            // the start of an identifier if checked second.
-            if let Some(tok) = self.scan_glyph(start, c) {
-                tokens.push(tok);
-                continue;
-            }
-            if let Some(tok) = self.scan_glyph_ident(start, c) {
-                tokens.push(tok);
-                continue;
-            }
-            if let Some(tok) = self.scan_host_effect(start, c) {
-                tokens.push(tok);
-                continue;
-            }
-            if c.is_ascii_digit() {
-                tokens.push(self.scan_number(start)?);
-                continue;
-            }
-            if c == '"' {
-                tokens.push(self.scan_string(start)?);
-                continue;
-            }
-            if c.is_alphabetic() || c == '_' {
-                tokens.push(self.scan_identifier(start));
-                continue;
-            }
-
-            return Err(self.error(start, format!("unexpected character '{c}'")));
-        }
-        Ok(tokens)
-    }
-
-    fn skip_trivia(&mut self) -> Result<(), Diagnostic> {
-        loop {
-            while let Some(&(_, c)) = self.chars.peek() {
-                if c.is_whitespace() {
-                    self.chars.next();
-                } else {
-                    break;
-                }
-            }
-
-            if let Some(&(from, '/')) = self.chars.peek() {
-                let mut lookahead = self.chars.clone();
-                lookahead.next();
-                if let Some(&(_, '/')) = lookahead.peek() {
-                    let mut to = from;
-                    while let Some(&(i, c)) = self.chars.peek() {
-                        self.chars.next();
-                        if c == '\n' {
-                            break;
-                        }
-                        to = i + c.len_utf8();
-                    }
-                    self.comments.push((from, to));
-                    continue;
-                }
-            }
-
-            if let Some(&(start, '⌈')) = self.chars.peek() {
-                self.chars.next();
-                let mut depth = 1;
-                let mut to = start;
-                while depth > 0 {
-                    match self.chars.next() {
-                        Some((i, c @ '⌈')) => {
-                            depth += 1;
-                            to = i + c.len_utf8();
-                        }
-                        Some((i, c @ '⌉')) => {
-                            depth -= 1;
-                            to = i + c.len_utf8();
-                        }
-                        Some((i, c)) => to = i + c.len_utf8(),
-                        None => return Err(self.error(start, "unterminated block comment")),
-                    }
-                }
-                self.comments.push((start, to));
-                continue;
-            }
-
-            break;
-        }
-        Ok(())
-    }
-
-    /// Digits of one radix with single `_` separators between digits.
-    fn scan_digits(&mut self, radix: u32, end: &mut usize) {
-        while let Some(&(i, c)) = self.chars.peek() {
-            if c.is_digit(radix) {
-                self.chars.next();
-                *end = i + c.len_utf8();
-            } else if c == '_' {
-                let mut ahead = self.chars.clone();
-                ahead.next();
-                if matches!(ahead.peek(), Some((_, d)) if d.is_digit(radix)) {
-                    self.chars.next();
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn scan_number(&mut self, start: usize) -> Result<Token, Diagnostic> {
-        let mut end = start;
-        // `0x`/`0b`/`0o` integers (`CONCRETE_SYMBOLIC_GRAMMAR.md` §5).
-        if self.source[start..].starts_with('0') {
-            let radix = match self.source[start + 1..].chars().next() {
-                Some('x' | 'X') => 16,
-                Some('b' | 'B') => 2,
-                Some('o' | 'O') => 8,
-                _ => 0,
-            };
-            if radix != 0 {
-                let mut ahead = self.chars.clone();
-                ahead.next();
-                ahead.next();
-                if matches!(ahead.peek(), Some((_, d)) if d.is_digit(radix)) {
-                    self.chars.next();
-                    self.chars.next();
-                    let digits_start = start + 2;
-                    end = digits_start;
-                    self.scan_digits(radix, &mut end);
-                    let digits: String = self.source[digits_start..end]
-                        .chars()
-                        .filter(|c| *c != '_')
-                        .collect();
-                    let value = i64::from_str_radix(&digits, radix)
-                        .map_err(|_| self.error(start, "integer literal out of range"))?;
-                    return Ok(Token {
-                        kind: TokenKind::Int(value),
-                        span: self.span(start, end),
-                    });
-                }
-            }
-        }
-
-        self.scan_digits(10, &mut end);
-        let mut is_real = false;
-
-        if let Some(&(_, '.')) = self.chars.peek() {
-            let mut lookahead = self.chars.clone();
-            lookahead.next();
-            if matches!(lookahead.peek(), Some((_, d)) if d.is_ascii_digit()) {
-                is_real = true;
-                self.chars.next(); // consume '.'
-                self.scan_digits(10, &mut end);
-            }
-        }
-
-        // An exponent makes a `Real` with or without a fractional part;
-        // `e` not followed by digits stays the start of an identifier.
-        if matches!(self.chars.peek(), Some((_, 'e' | 'E'))) {
-            let mut ahead = self.chars.clone();
-            ahead.next();
-            if matches!(ahead.peek(), Some((_, '+' | '-'))) {
-                ahead.next();
-            }
-            if matches!(ahead.peek(), Some((_, d)) if d.is_ascii_digit()) {
-                is_real = true;
-                self.chars.next();
-                if matches!(self.chars.peek(), Some((_, '+' | '-'))) {
-                    self.chars.next();
-                }
-                self.scan_digits(10, &mut end);
-            }
-        }
-
-        let text: String = self.source[start..end]
-            .chars()
-            .filter(|c| *c != '_')
+    /// The token kinds of `source`, without the final `Eof`.
+    pub(super) fn kinds(source: &str) -> Vec<TokenKind> {
+        let mut kinds: Vec<_> = tokenize(source, SourceId(0))
+            .unwrap_or_else(|d| panic!("lex error in {source:?}: {}", d.message))
+            .into_iter()
+            .map(|t| t.kind)
             .collect();
-        if is_real {
-            let value: f64 = text
-                .parse()
-                .map_err(|_| self.error(start, "invalid real literal"))?;
-            Ok(Token {
-                kind: TokenKind::Real(value),
-                span: self.span(start, end),
-            })
-        } else {
-            // 2^63 is only meaningful as the magnitude of `−2^63`; it
-            // lexes as `i64::MIN` and the parser accepts it solely
-            // behind a unary minus.
-            let value: i64 = if text == "9223372036854775808" {
-                i64::MIN
-            } else {
-                text.parse()
-                    .map_err(|_| self.error(start, "integer literal out of range"))?
-            };
-            Ok(Token {
-                kind: TokenKind::Int(value),
-                span: self.span(start, end),
-            })
+        assert_eq!(kinds.pop(), Some(TokenKind::Eof));
+        kinds
+    }
+
+    /// The message of the lexical error `source` produces.
+    pub(super) fn error(source: &str) -> String {
+        match tokenize(source, SourceId(0)) {
+            Err(d) => d.message,
+            Ok(t) => panic!("expected a lex error in {source:?}, got {t:?}"),
         }
     }
 
-    fn scan_string(&mut self, start: usize) -> Result<Token, Diagnostic> {
-        self.chars.next(); // consume opening quote
-        let mut value = String::new();
-        loop {
-            match self.chars.next() {
-                None => return Err(self.error(start, "unterminated string literal")),
-                Some((i, '"')) => {
-                    return Ok(Token {
-                        kind: TokenKind::Str(value),
-                        span: self.span(start, i + 1),
-                    });
-                }
-                // CONCRETE_SYMBOLIC_GRAMMAR.md §5's EscapeSequence
-                // production.
-                Some((i, '\\')) => match self.chars.next() {
-                    Some((_, '"')) => value.push('"'),
-                    Some((_, '\\')) => value.push('\\'),
-                    Some((_, 'n')) => value.push('\n'),
-                    Some((_, 't')) => value.push('\t'),
-                    Some((_, 'r')) => value.push('\r'),
-                    Some((_, '0')) => value.push('\0'),
-                    Some((_, 'u')) => value.push(self.scan_unicode_escape(i)?),
-                    Some((_, other)) => {
-                        return Err(
-                            self.error(i, format!("unsupported escape sequence '\\{other}'"))
-                        );
-                    }
-                    None => return Err(self.error(start, "unterminated string literal")),
-                },
-                Some((_, c)) => value.push(c),
-            }
-        }
+    pub(super) fn ident(name: &str) -> TokenKind {
+        TokenKind::Ident(name.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::*;
+    use super::*;
+
+    #[test]
+    fn the_token_stream_always_ends_with_eof_at_the_end_of_the_source() {
+        let source = "x ≔ 1";
+        let tokens = tokenize(source, SourceId(0)).unwrap();
+        let last = tokens.last().unwrap();
+        assert_eq!(last.kind, TokenKind::Eof);
+        assert_eq!(last.span, Span::point(SourceId(0), source.len() as u32));
     }
 
-    /// `\u{h…}` — one to six hex digits naming a Unicode scalar value.
-    fn scan_unicode_escape(&mut self, at: usize) -> Result<char, Diagnostic> {
-        if !matches!(self.chars.next(), Some((_, '{'))) {
-            return Err(self.error(at, "expected '{' after '\\u'"));
-        }
-        let mut digits = String::new();
-        loop {
-            match self.chars.next() {
-                Some((_, '}')) => break,
-                Some((_, c)) if c.is_ascii_hexdigit() && digits.len() < 6 => digits.push(c),
-                _ => return Err(self.error(at, "malformed '\\u{…}' escape")),
-            }
-        }
-        u32::from_str_radix(&digits, 16)
-            .ok()
-            .and_then(char::from_u32)
-            .ok_or_else(|| self.error(at, "'\\u{…}' is not a Unicode scalar value"))
+    #[test]
+    fn spans_are_byte_offsets_across_multi_byte_glyphs() {
+        let tokens = tokenize("x ≔ 5", SourceId(0)).unwrap();
+        let bind = &tokens[1];
+        assert_eq!(bind.kind, TokenKind::Bind);
+        assert_eq!((bind.span.start, bind.span.end), (2, 5));
     }
 
-    fn scan_identifier(&mut self, start: usize) -> Token {
-        let mut end = start;
-        while let Some(&(i, c)) = self.chars.peek() {
-            if c.is_alphanumeric() || c == '_' {
-                self.chars.next();
-                end = i + c.len_utf8();
-            } else {
-                break;
-            }
-        }
-        let text = self.source[start..end].to_string();
-        // §10: a bare "_" is the reserved Wildcard, never an ordinary
-        // identifier — recognized here so the parser never needs to
-        // special-case an Ident("_") itself.
-        let kind = if text == "_" {
-            TokenKind::Wildcard
-        } else {
-            TokenKind::Ident(text)
-        };
-        Token {
-            kind,
-            span: self.span(start, end),
-        }
+    #[test]
+    fn a_line_comment_is_collected_not_tokenized() {
+        let (tokens, comments) = tokenize_with_comments("x // note\n≔", SourceId(0)).unwrap();
+        assert_eq!(tokens.len(), 3, "x, ≔, Eof");
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].text, "// note");
     }
 
-    /// Two-codepoint glyphs: a base character immediately followed by
-    /// U+FE0E (a text-presentation variation selector). `⚙︎` (rebind) was
-    /// the first of these; `☠︎` (binary subtract, §20.2) is the second —
-    /// both handled by this one table-driven scanner rather than
-    /// duplicating the two-codepoint-lookahead logic per glyph.
-    fn scan_variation_selector_glyph(&mut self, start: usize, c: char) -> Option<Token> {
-        let kind = match c {
-            '\u{2699}' => TokenKind::Rebind,
-            '\u{2620}' => TokenKind::Minus,
-            _ => return None,
-        };
-        let mut lookahead = self.chars.clone();
-        lookahead.next();
-        if !matches!(lookahead.peek(), Some((_, '\u{FE0E}'))) {
-            return None;
-        }
-        self.chars.next(); // consume the base character
-        let (vs_offset, vs_char) = self.chars.next().expect("checked by lookahead above");
-        Some(Token {
-            kind,
-            span: self.span(start, vs_offset + vs_char.len_utf8()),
-        })
+    #[test]
+    fn block_comments_nest() {
+        let (_, comments) = tokenize_with_comments("⌈ a ⌈ b ⌉ c ⌉ x", SourceId(0)).unwrap();
+        assert_eq!(comments[0].text, "⌈ a ⌈ b ⌉ c ⌉");
+        assert_eq!(kinds("⌈ a ⌈ b ⌉ c ⌉ x"), [ident("x")]);
     }
 
-    /// Canon glyph names (`GLYPH_SYSTEM_DESIGN.md` §10.3/§10.4/§10.5):
-    /// `⊘`/`⁝` are `List`'s `Nil`/`Cons` constructors, `⦰`/`⧫` are
-    /// `Optional`'s `None`/`Some` constructors, `✓`/`✗` are `Result`'s
-    /// `Ok`/`Err` constructors, `⟐`/`⌿`/`⌽` are the ambient
-    /// `map`/`filter`/`fold` combinators over `List`, `⊡`/`⊟`/`⊞`/`#`/`⊙`
-    /// are `Array`'s `map`/`filter`/`fold`/`length`/`set` natives. These
-    /// reuse the ordinary `Ident` token rather than each minting a
-    /// dedicated `TokenKind` — they behave exactly like any other
-    /// prelude name (constructor Tag or ordinary reference), just
-    /// spelled with a symbol instead of a word; `starts_uppercase` in
-    /// the parser treats a symbol-led name as a Tag the same way it
-    /// treats an uppercase letter.
-    fn scan_glyph_ident(&mut self, start: usize, c: char) -> Option<Token> {
-        // `⌭` alone is the bytes type; `⌭` + a role glyph names the byte
-        // twin of the Str/Array operation with that glyph (`ADR-027`).
-        if c == '⌭' {
-            let mut ahead = self.chars.clone();
-            ahead.next();
-            let (len, name) = match ahead.peek() {
-                Some(&(_, r @ ('#' | '⌷' | '⍪' | '⊠' | '⇋' | '⇌' | '⌕' | '⌘' | '⍕'))) => {
-                    (c.len_utf8() + r.len_utf8(), format!("{c}{r}"))
-                }
-                _ => (c.len_utf8(), c.to_string()),
-            };
-            self.chars.next();
-            if len > c.len_utf8() {
-                self.chars.next();
-            }
-            return Some(Token {
-                kind: TokenKind::Ident(name),
-                span: self.span(start, start + len),
-            });
-        }
-        let name = match c {
-            '⊘' | '⁝' | '⦰' | '⧫' | '✓' | '✗' | '⟐' | '⌿' | '⌽' | '⊡' | '⊟' | '⊞' | '#' | '⊙'
-            | '↗' | '↘' | '⫽' | '⫴' | '⌫' | '∋' | '⍴' | '⊏' | '↦' | '⇝' | '⍕' | '⚑' | '⊕' | '⍪'
-            | '⌷' | '⍳' | '⊠' | '⍋' | '⇋' | '⇌' | '⍬' | '⊎' | '⊖' | '⌕' | '⊛' | '⌸' | '⌹' | '⍭'
-            | '⊌' | '⊝' | '∈' | '⊚' | '⌻' | '⌑' | '➤' | '◇' | '∥' | '⋆' | '⊓' | '⊔' | '⊗' | '∼'
-            | '⋘' | '⋙' | '⊥' | '⊤' | '√' | '⌊' | '⌃' | '⌾' | '⋇' | 'ℯ' | 'ℓ' | '∿' | '∾' | '∠'
-            | '⍥' | '∦' | 'ϖ' | '∞' | '⌶' | '⍂' | '⌯' | '⌮' | '⇧' | '⇩' | '⤳' | '⊢' | '⊣' | '⍸' => {
-                c.to_string()
-            }
-            _ => return None,
-        };
-        self.chars.next();
-        Some(Token {
-            kind: TokenKind::Ident(name),
-            span: self.span(start, start + c.len_utf8()),
-        })
+    #[test]
+    fn an_unterminated_block_comment_is_an_error() {
+        assert!(error("⌈ never closed").contains("unterminated block comment"));
     }
 
-    /// Host-effect family (`GLYPH_SYSTEM_DESIGN.md` §10.2): `⌁` (host
-    /// boundary) composes with an independent direction mark (`↑`
-    /// emit/`↓` read) and an optional medium mark (`⌬` file, console by
-    /// default) into one name — `⌁↑`, `⌁↓`, `⌁↑⌬`, `⌁↓⌬` — the same way
-    /// `≔˚⟳` composes the Binder family's independent postfix marks.
-    /// Unlike those, this composition spells a single `Ident`, not
-    /// several tokens: `print`/`readLine`/`readFile`/`writeFile` are
-    /// ordinary prelude names looked up by their full string, so the
-    /// lexer must produce that whole string as one token. An invalid or
-    /// incomplete combination (bare `⌁`, or `⌁` with no matching host
-    /// native) is not rejected here — it lexes fine and simply fails to
-    /// resolve later as an unbound identifier, the same as any other
-    /// misspelled name.
-    fn scan_host_effect(&mut self, start: usize, c: char) -> Option<Token> {
-        if c != '⌁' {
-            return None;
-        }
-        self.chars.next();
-        let mut end = start + c.len_utf8();
-        if let Some(&(i, dir @ ('↑' | '↓' | '↯' | '⍰' | '⊕' | '⊖' | '⇄' | '⧉'))) = self.chars.peek()
-        {
-            self.chars.next();
-            end = i + dir.len_utf8();
-            // `⌬` file, `⌥` program arguments, `⎈` environment (`ADR-022`),
-            // `⍉` error stream (`ADR-023`), `⌂` directory, `⌭` bytes (`ADR-024`),
-            // `⎙` text stream, `⎚` byte stream, `⌖` terminal, `⧗` wall clock,
-            // `⧖` monotonic clock, `⚀` integer dice, `⚁` real dice (`ADR-027`).
-            if let Some(&(
-                i,
-                medium @ ('⌬' | '⌥' | '⎈' | '⍉' | '⌂' | '⌭' | '⎙' | '⎚' | '⌖' | '⧗' | '⧖' | '⚀'
-                | '⚁'),
-            )) = self.chars.peek()
-            {
-                self.chars.next();
-                end = i + medium.len_utf8();
-            }
-        }
-        let name = self.source[start..end].to_string();
-        Some(Token {
-            kind: TokenKind::Ident(name),
-            span: self.span(start, end),
-        })
+    #[test]
+    fn comments_come_back_in_source_order() {
+        let (_, comments) = tokenize_with_comments("// a\nx // b\n// c\n", SourceId(0)).unwrap();
+        let texts: Vec<_> = comments.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(texts, ["// a", "// b", "// c"]);
     }
 
-    fn scan_glyph(&mut self, start: usize, c: char) -> Option<Token> {
-        let kind = match c {
-            '≔' => TokenKind::Bind,
-            'λ' => TokenKind::Lambda,
-            '→' => TokenKind::Arrow,
-            '▷' => TokenKind::Pipe,
-            '◈' => TokenKind::PipeRef,
-            '•' => TokenKind::Hole,
-            '❧' => TokenKind::Seal,
-            '˚' => TokenKind::Mut,
-            '⟳' => TokenKind::Export,
-            '⟲' => TokenKind::Import,
-            '⟡' => TokenKind::Match,
-            '⟢' => TokenKind::ArmSep,
-            '◉' => TokenKind::Bool(true),
-            '◎' => TokenKind::Bool(false),
-            '(' => TokenKind::LParen,
-            ')' => TokenKind::RParen,
-            '{' => TokenKind::LBrace,
-            '}' => TokenKind::RBrace,
-            '[' => TokenKind::LBracket,
-            ']' => TokenKind::RBracket,
-            ',' => TokenKind::Comma,
-            ':' => TokenKind::Colon,
-            '✚' => TokenKind::Plus,
-            '✱' => TokenKind::Star,
-            '÷' => TokenKind::Slash,
-            '⌗' => TokenKind::Percent,
-            '−' => TokenKind::Neg,
-            '¬' => TokenKind::Not,
-            '∧' => TokenKind::And,
-            '∨' => TokenKind::Or,
-            '⊻' => TokenKind::Xor,
-            '<' => TokenKind::Lt,
-            '>' => TokenKind::Gt,
-            '≤' => TokenKind::Le,
-            '≥' => TokenKind::Ge,
-            '≡' => TokenKind::EqEq,
-            '≠' => TokenKind::NotEq,
-            '☄' => TokenKind::Raise,
-            '☈' => TokenKind::ExceptionDecl,
-            '.' => TokenKind::Dot,
-            '☊' => TokenKind::Catch,
-            '⟁' => TokenKind::TyInt,
-            '⧆' => TokenKind::TyReal,
-            '⌘' => TokenKind::TyStr,
-            '○' => TokenKind::TyBool,
-            '∅' => TokenKind::TyUnit,
-            _ => return None,
-        };
-        self.chars.next();
-        Some(Token {
-            kind,
-            span: self.span(start, start + c.len_utf8()),
-        })
+    #[test]
+    fn non_nfc_source_is_rejected_at_the_first_divergence() {
+        // "e" + COMBINING ACUTE composes to "é" in NFC.
+        let source = "ab e\u{301}";
+        let err = tokenize(source, SourceId(0)).unwrap_err();
+        assert!(err.message.contains("NFC"));
+        assert_eq!(err.primary.start, 3);
+    }
+
+    #[test]
+    fn nfc_source_with_combining_free_text_is_accepted() {
+        assert_eq!(kinds("é"), [ident("é")]);
+    }
+
+    #[test]
+    fn an_unexpected_character_is_reported_with_its_position() {
+        let err = tokenize("x ≔ @", SourceId(0)).unwrap_err();
+        assert!(err.message.contains("unexpected character '@'"));
+        assert_eq!(err.primary.start, 6);
     }
 }

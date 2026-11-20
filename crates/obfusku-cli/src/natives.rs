@@ -1,523 +1,95 @@
-//! Host-provided native capabilities — the runtime-↔-host boundary
-//! decided for I/O: `obfusku-runtime` never touches `std::io` itself
-//! (see [`obfusku_runtime::value::NativeFn`]'s own doc comment); this
-//! crate, as the host, constructs each [`obfusku_runtime::Value::Native`]
-//! closure and hand-authors a [`Scheme`] for it, then seeds both into
-//! the same ambient prelude `stdlib::load` already populates — a native
-//! is otherwise an ordinary prelude value, indistinguishable to
-//! `check_with_prelude`/`evaluate_with_prelude` from a `.obk`-sourced
-//! one.
+//! Host-provided natives — the runtime ↔ host boundary (`ADR-010`).
 //!
-//! Unlike stdlib source, there is no compiler-checked link between a
-//! native's hand-written `Scheme` and its actual Rust behavior — that
-//! must be verified by tests instead (see this module's own tests).
+//! `obfusku-runtime` never touches `std::io`, the clock or the environment
+//! itself (see [`obfusku_runtime::value::NativeFn`]). This crate is the
+//! host: it builds each [`obfusku_runtime::Value::Native`] closure and
+//! hand-writes a [`obfusku_typecheck::Scheme`] for it, then seeds both into
+//! the same ambient prelude [`crate::stdlib::load`] fills. To the checker
+//! and the evaluator a native is an ordinary prelude value, which is what
+//! keeps the language core free of any host knowledge.
 //!
-//! Standard native functions (`GLYPH_SYSTEM_DESIGN.md` §10.2's host-effect
-//! family): `⌁↑` (print), `⌁↓` (readLine), `⌁↓⌬` (readFile), and `⌁↑⌬`
-//! (writeFile); plus `load_process`'s `⌁↓⌥` (arguments) and `⌁↓⎈` (environment).
-//! Streams, clocks, randomness and file management live in `io_native`.
+//! **There is no compiler-checked link between a native's `Scheme` and its
+//! Rust behavior.** A scheme that lies is caught only by tests, so every
+//! family keeps tests that pair the registered type with an actual call.
 //!
-//! `⌁↓ : ∅ → ⌘` takes the Unit value (`∅`) as its argument, since
-//! `Apply` is arity-1. EOF or read error raises built-in `Failure`.
+//! # Families
 //!
-//! **Filesystem capability model** (`⌁↓⌬`/`⌁↑⌬`):
-//! - Paths are strings validated at runtime by the closure.
-//! - The filesystem root is the entry file's directory (`base_dir`).
-//! - Escapes (`..` or absolute paths outside root) raise `Failure("PermissionDenied", ...)`.
-//! - Capabilities live in closure-captured state, invisible to Obfusku source.
+//! | Module | Natives | Needs |
+//! |---|---|---|
+//! | `process` | console lines, arguments, environment, exit | arguments |
+//! | `streams` | stdin/stdout streams, clocks, dice (`ADR-027`) | – |
+//! | `filesystem` | files, directories, bytes (`ADR-011`, `ADR-024`) | a root |
+//! | `collections` | `List`/`Array`/`Map`/`Set` (`ADR-021`, `ADR-025`) | – |
+//! | `numeric`, `text`, `bytes` | conversions and combinators (`ADR-023`, `ADR-027`) | – |
+//!
+//! `capability` filters the result by what `obfusku.toml` grants
+//! (`ADR-029`); `marshal` and `registry` are the shared plumbing.
+//!
+//! The filesystem family is optional: the REPL has no entry file to scope
+//! a root against, so it simply does not get one.
 
-use crate::native_util::adt;
-use obfusku_core::types::Type as CoreType;
-use obfusku_runtime::Text;
-use obfusku_runtime::eval::Raised;
-use obfusku_runtime::{NativeFn, Value};
-use obfusku_typecheck::{Prelude, Scheme, Type, TypeVarId};
+pub mod bytes;
+pub mod capability;
+pub mod collections;
+pub mod filesystem;
+pub mod marshal;
+pub mod numeric;
+pub mod process;
+pub mod registry;
+pub mod streams;
+pub mod text;
+
+use obfusku_runtime::Value;
+use obfusku_typecheck::Prelude;
 use std::collections::HashMap;
-use std::io::{BufRead, Write};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-/// `print`/`readLine` only — the two natives with no filesystem-root
-/// question at all. Split out from [`load`] so a caller with no single
-/// "entry file" to scope a filesystem capability against (the REPL,
-/// which has no file on disk at all) can still get ordinary I/O without
-/// this crate inventing a filesystem policy for that caller — that
-/// question stays with the entry-file-based `load` below, deliberately
-/// out of scope here (`LANGUAGE_SPEC.md` §5's still-open artifact
-/// model).
+/// A family's contribution to the ambient prelude: type schemes and values.
+pub type Natives = (Prelude, HashMap<String, Value>);
+
+/// Every native a program may see.
+///
+/// `fs_root` scopes the filesystem family; `None` leaves it out. `args` are
+/// the program arguments behind `⌁↓⌥`.
 #[must_use]
-pub fn load_io_only() -> (Prelude, HashMap<String, Value>) {
+pub fn load(fs_root: Option<&Path>, args: &[String]) -> Natives {
+    let mut families = vec![
+        process::load(args),
+        streams::load(),
+        collections::load(),
+        numeric::load(),
+        text::load(),
+        bytes::load(),
+    ];
+    if let Some(root) = fs_root {
+        // Canonicalized once: symlinks in the root itself are resolved here
+        // so every later comparison is against one stable path.
+        let root = Rc::new(root.canonicalize().unwrap_or_else(|_| PathBuf::from(root)));
+        families.push(filesystem::load(&root));
+    }
     let mut types = Prelude::new();
     let mut values = HashMap::new();
-
-    types.insert(
-        "⌁↑".to_string(),
-        Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
-            &CoreType::Function(Box::new(CoreType::Str), Box::new(CoreType::Unit)),
-            &HashMap::new(),
-        )),
-    );
-    values.insert("⌁↑".to_string(), Value::Native(Rc::new(print_native())));
-
-    types.insert(
-        "⌁↓".to_string(),
-        Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
-            &CoreType::Function(Box::new(CoreType::Unit), Box::new(CoreType::Str)),
-            &HashMap::new(),
-        )),
-    );
-    values.insert("⌁↓".to_string(), Value::Native(Rc::new(read_line_native())));
-
-    // `⌁↑⍉ : ⌘ → ∅` — emit to the error stream; `⌁↯ : ⟁ → a` — terminate
-    // the process with an exit code in 0..=255 (`ADR-023`).
-    types.insert(
-        "⌁↑⍉".to_string(),
-        Scheme::monomorphic(Type::Function(Box::new(Type::Str), Box::new(Type::Unit))),
-    );
-    values.insert(
-        "⌁↑⍉".to_string(),
-        Value::Native(Rc::new(print_stderr_native())),
-    );
-    types.insert(
-        "⌁↯".to_string(),
-        Scheme::poly(
-            vec![TypeVarId(0)],
-            Type::Function(Box::new(Type::Int), Box::new(Type::Var(TypeVarId(0)))),
-        ),
-    );
-    values.insert("⌁↯".to_string(), Value::Native(Rc::new(exit_native())));
-
-    let (stream_types, stream_values) = crate::io_native::load_streams();
-    types.extend(stream_types);
-    values.extend(stream_values);
-
+    for (family_types, family_values) in families {
+        types.extend(family_types);
+        values.extend(family_values);
+    }
     (types, values)
-}
-
-/// Process-environment natives (`ADR-022`): `⌁↓⌥` (arguments) and `⌁↓⎈`
-/// (environment variable). Neither touches the filesystem, so like
-/// `print`/`readLine` they need no root; `args` is whatever the host passes
-/// the program (`run <file> -- <args>`), empty for the REPL and `check`.
-#[must_use]
-pub fn load_process(args: &[String]) -> (Prelude, HashMap<String, Value>) {
-    let mut types = Prelude::new();
-    let mut values = HashMap::new();
-
-    let str_list = CoreType::Adt("List".to_string(), vec![CoreType::Str]);
-    types.insert(
-        "⌁↓⌥".to_string(),
-        Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
-            &CoreType::Function(Box::new(CoreType::Unit), Box::new(str_list)),
-            &HashMap::new(),
-        )),
-    );
-    values.insert(
-        "⌁↓⌥".to_string(),
-        Value::Native(Rc::new(arguments_native(args))),
-    );
-
-    let optional_str = CoreType::Adt("Optional".to_string(), vec![CoreType::Str]);
-    types.insert(
-        "⌁↓⎈".to_string(),
-        Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
-            &CoreType::Function(Box::new(CoreType::Str), Box::new(optional_str)),
-            &HashMap::new(),
-        )),
-    );
-    values.insert("⌁↓⎈".to_string(), Value::Native(Rc::new(env_var_native())));
-
-    (types, values)
-}
-
-/// Every native's `Scheme` and `Value`, ready to seed prelude environments.
-/// `base_dir` becomes the filesystem root `readFile`/`writeFile` are scoped to.
-#[must_use]
-pub fn load(base_dir: &Path) -> (Prelude, HashMap<String, Value>) {
-    let (mut types, mut values) = load_io_only();
-
-    // Canonicalized once here: resolves symlinks in `base_dir` itself so
-    // subsequent operations compare against a consistent root.
-    let root: Rc<PathBuf> = Rc::new(
-        base_dir
-            .canonicalize()
-            .unwrap_or_else(|_| base_dir.to_path_buf()),
-    );
-
-    types.insert(
-        "⌁↓⌬".to_string(),
-        Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
-            &CoreType::Function(Box::new(CoreType::Str), Box::new(CoreType::Str)),
-            &HashMap::new(),
-        )),
-    );
-    values.insert(
-        "⌁↓⌬".to_string(),
-        Value::Native(Rc::new(read_file_native(Rc::clone(&root)))),
-    );
-
-    types.insert(
-        "⌁↑⌬".to_string(),
-        Scheme::monomorphic(obfusku_typecheck::instantiate_core_type(
-            &CoreType::Function(
-                Box::new(CoreType::Str),
-                Box::new(CoreType::Function(
-                    Box::new(CoreType::Str),
-                    Box::new(CoreType::Unit),
-                )),
-            ),
-            &HashMap::new(),
-        )),
-    );
-    values.insert(
-        "⌁↑⌬".to_string(),
-        Value::Native(Rc::new(write_file_native(Rc::clone(&root)))),
-    );
-
-    // Directories, existence and bytes (`ADR-024`), all scoped to `root`.
-    let str_to = |ret: Type| Type::Function(Box::new(Type::Str), Box::new(ret));
-    let names = Type::Adt("List".to_string(), vec![Type::Str]);
-    let mut add = |name: &str, ty: Type, native: NativeFn| {
-        types.insert(name.to_string(), Scheme::monomorphic(ty));
-        values.insert(name.to_string(), Value::Native(Rc::new(native)));
-    };
-    add(
-        "⌁↓⌂",
-        str_to(names),
-        path_native("⌁↓⌂", &root, |p| {
-            let mut entries: Vec<String> = std::fs::read_dir(p)?
-                .map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned()))
-                .collect::<Result<_, _>>()?;
-            entries.sort();
-            Ok(entries.into_iter().rev().fold(adt("⊘", vec![]), |tail, n| {
-                adt("⁝", vec![Value::Str(Text::from(n.as_str())), tail])
-            }))
-        }),
-    );
-    add(
-        "⌁↑⌂",
-        str_to(Type::Unit),
-        path_native("⌁↑⌂", &root, |p| {
-            std::fs::create_dir_all(p)?;
-            Ok(Value::Unit)
-        }),
-    );
-    add(
-        "⌁⍰⌬",
-        str_to(Type::Bool),
-        path_native("⌁⍰⌬", &root, |p| Ok(Value::Bool(p.exists()))),
-    );
-    add(
-        "⌁⍰⌂",
-        str_to(Type::Bool),
-        path_native("⌁⍰⌂", &root, |p| Ok(Value::Bool(p.is_dir()))),
-    );
-    let (io_types, io_values) = crate::io_native::load_fs(&root);
-    types.extend(io_types);
-    values.extend(io_values);
-
-    (types, values)
-}
-
-/// Resolves `user_path` against `root` — `root` must already be
-/// canonicalized (`load`'s own contract). First, lexically: no
-/// filesystem access, so it works identically whether the target exists
-/// yet (`writeFile` creating a new file) or not; rejects an absolute
-/// `user_path` outright, and rejects any `..` that would climb above
-/// `root` itself. Second, `ADR-019`'s symlink-escape check: the
-/// lexically-resolved path's real, symlink-followed location must also
-/// stay within `root` — a path that is lexically well-formed but
-/// resolves through a symlink to somewhere outside `root` is rejected
-/// here, not left to look like an ordinary allowed access.
-pub(crate) fn resolve_within_root(root: &Path, user_path: &str) -> Option<PathBuf> {
-    let candidate = Path::new(user_path);
-    if candidate.is_absolute() {
-        return None;
-    }
-    let mut stack: Vec<Component> = root.components().collect();
-    let root_len = stack.len();
-    for comp in candidate.components() {
-        match comp {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if stack.len() <= root_len {
-                    return None;
-                }
-                stack.pop();
-            }
-            Component::Normal(_) => stack.push(comp),
-            Component::RootDir | Component::Prefix(_) => return None,
-        }
-    }
-    let resolved: PathBuf = stack.iter().collect();
-    if crate::project::escapes_root_via_symlink(root, &resolved) {
-        return None;
-    }
-    Some(resolved)
-}
-
-/// A `Str → a` native over a path inside `root`: a path that escapes it is
-/// `Failure("PermissionDenied", …)`, an OS error maps via [`io_error_tag`].
-fn path_native(
-    name: &'static str,
-    root: &Rc<PathBuf>,
-    op: impl Fn(&Path) -> std::io::Result<Value> + 'static,
-) -> NativeFn {
-    let root = Rc::clone(root);
-    NativeFn {
-        name: name.to_string(),
-        func: Box::new(move |arg| {
-            let Value::Str(path) = &arg else {
-                return Err(Raised(adt(
-                    "InvalidOperation",
-                    vec![Value::Str(Text::from(
-                        format!("'{name}' expects a Str, found {arg:?}").as_str(),
-                    ))],
-                )));
-            };
-            let Some(resolved) = resolve_within_root(&root, path) else {
-                return Err(Raised(failure(
-                    "PermissionDenied",
-                    &format!("{name}: '{path}' is outside the allowed root"),
-                )));
-            };
-            op(&resolved).map_err(|e| Raised(failure(io_error_tag(&e), &format!("{name}: {e}"))))
-        }),
-    }
-}
-
-/// Constructs a `Failure(tag, message)` value (§15.2).
-pub(crate) fn failure(tag: &str, message: &str) -> Value {
-    Value::Adt {
-        tag: Rc::from("Failure"),
-        args: Rc::from(vec![
-            Value::Str(Text::from(tag)),
-            Value::Str(Text::from(message)),
-        ]),
-    }
-}
-
-/// Maps OS permission errors to `"PermissionDenied"`, other I/O errors to `"IOError"`.
-pub(crate) fn io_error_tag(e: &std::io::Error) -> &'static str {
-    if e.kind() == std::io::ErrorKind::PermissionDenied {
-        "PermissionDenied"
-    } else {
-        "IOError"
-    }
-}
-
-fn print_native() -> NativeFn {
-    NativeFn {
-        name: "⌁↑".to_string(),
-        func: Box::new(|arg| match &arg {
-            Value::Str(s) => {
-                // `println!` would panic on a closed pipe (`| head`).
-                match writeln!(std::io::stdout().lock(), "{s}") {
-                    Ok(()) => Ok(Value::Unit),
-                    Err(e) => Err(Raised(failure("IOError", &format!("print: {e}")))),
-                }
-            }
-            // Unreachable through well-typed source.
-            other => Err(Raised(Value::Adt {
-                tag: Rc::from("InvalidOperation"),
-                args: Rc::from(vec![Value::Str(Text::from(
-                    format!("'⌁↑' expects a Str, found {other:?}").as_str(),
-                ))]),
-            })),
-        }),
-    }
-}
-
-fn arguments_native(args: &[String]) -> NativeFn {
-    let list = args.iter().rev().fold(adt("⊘", vec![]), |tail, a| {
-        adt("⁝", vec![Value::Str(Text::from(a.as_str())), tail])
-    });
-    NativeFn {
-        name: "⌁↓⌥".to_string(),
-        func: Box::new(move |arg| match arg {
-            Value::Unit => Ok(list.clone()),
-            // Unreachable through well-typed source.
-            other => Err(Raised(adt(
-                "InvalidOperation",
-                vec![Value::Str(Text::from(
-                    format!("'⌁↓⌥' expects Unit, found {other:?}").as_str(),
-                ))],
-            ))),
-        }),
-    }
-}
-
-fn env_var_native() -> NativeFn {
-    NativeFn {
-        name: "⌁↓⎈".to_string(),
-        func: Box::new(|arg| match &arg {
-            Value::Str(name) => Ok(match std::env::var(&**name) {
-                Ok(v) => adt("⧫", vec![Value::Str(Text::from(v.as_str()))]),
-                Err(_) => adt("⦰", vec![]),
-            }),
-            // Unreachable through well-typed source.
-            other => Err(Raised(adt(
-                "InvalidOperation",
-                vec![Value::Str(Text::from(
-                    format!("'⌁↓⎈' expects a Str, found {other:?}").as_str(),
-                ))],
-            ))),
-        }),
-    }
-}
-
-fn print_stderr_native() -> NativeFn {
-    NativeFn {
-        name: "⌁↑⍉".to_string(),
-        func: Box::new(|arg| match &arg {
-            Value::Str(s) => match writeln!(std::io::stderr().lock(), "{s}") {
-                Ok(()) => Ok(Value::Unit),
-                Err(e) => Err(Raised(failure("IOError", &format!("eprint: {e}")))),
-            },
-            // Unreachable through well-typed source.
-            other => Err(Raised(adt(
-                "InvalidOperation",
-                vec![Value::Str(Text::from(
-                    format!("'⌁↑⍉' expects a Str, found {other:?}").as_str(),
-                ))],
-            ))),
-        }),
-    }
-}
-
-fn exit_native() -> NativeFn {
-    NativeFn {
-        name: "⌁↯".to_string(),
-        func: Box::new(|arg| match arg {
-            Value::Int(code) if (0..=255).contains(&code) => {
-                // `process::exit` skips destructors, so flush explicitly.
-                let _ = std::io::stdout().flush();
-                std::process::exit(code as i32)
-            }
-            other => Err(Raised(adt(
-                "InvalidOperation",
-                vec![Value::Str(Text::from(
-                    format!("'⌁↯' expects an Int in 0..=255, found {other:?}").as_str(),
-                ))],
-            ))),
-        }),
-    }
-}
-
-fn read_line_native() -> NativeFn {
-    NativeFn {
-        name: "⌁↓".to_string(),
-        func: Box::new(|arg| {
-            // Unreachable through well-typed source.
-            if !matches!(arg, Value::Unit) {
-                return Err(Raised(Value::Adt {
-                    tag: Rc::from("InvalidOperation"),
-                    args: Rc::from(vec![Value::Str(Text::from(
-                        format!("'⌁↓' expects Unit, found {arg:?}").as_str(),
-                    ))]),
-                }));
-            }
-            let mut line = String::new();
-            match std::io::stdin().lock().read_line(&mut line) {
-                Ok(0) => Err(Raised(failure("EOF", "readLine: end of input"))),
-                Ok(_) => {
-                    if line.ends_with('\n') {
-                        line.pop();
-                        if line.ends_with('\r') {
-                            line.pop();
-                        }
-                    }
-                    Ok(Value::Str(Text::from(line.as_str())))
-                }
-                Err(e) => Err(Raised(failure("IOError", &format!("readLine: {e}")))),
-            }
-        }),
-    }
-}
-
-fn read_file_native(root: Rc<PathBuf>) -> NativeFn {
-    NativeFn {
-        name: "⌁↓⌬".to_string(),
-        func: Box::new(move |arg| {
-            let path = match &arg {
-                Value::Str(s) => &**s,
-                other => {
-                    return Err(Raised(Value::Adt {
-                        tag: Rc::from("InvalidOperation"),
-                        args: Rc::from(vec![Value::Str(Text::from(
-                            format!("'⌁↓⌬' expects a Str, found {other:?}").as_str(),
-                        ))]),
-                    }));
-                }
-            };
-            let Some(resolved) = resolve_within_root(&root, path) else {
-                return Err(Raised(failure(
-                    "PermissionDenied",
-                    &format!("readFile: '{path}' is outside the allowed root"),
-                )));
-            };
-            match std::fs::read_to_string(&resolved) {
-                Ok(contents) => Ok(Value::Str(Text::from(contents.as_str()))),
-                Err(e) => Err(Raised(failure(io_error_tag(&e), &format!("readFile: {e}")))),
-            }
-        }),
-    }
-}
-
-/// `writeFile : Str → Str → Unit` — curried native function. The first call
-/// binds the path; the second call writes the content.
-fn write_file_native(root: Rc<PathBuf>) -> NativeFn {
-    NativeFn {
-        name: "⌁↑⌬".to_string(),
-        func: Box::new(move |path_arg| {
-            let path = match &path_arg {
-                Value::Str(s) => s.clone(),
-                other => {
-                    return Err(Raised(Value::Adt {
-                        tag: Rc::from("InvalidOperation"),
-                        args: Rc::from(vec![Value::Str(Text::from(
-                            format!("'⌁↑⌬' expects a Str, found {other:?}").as_str(),
-                        ))]),
-                    }));
-                }
-            };
-            let root = Rc::clone(&root);
-            Ok(Value::Native(Rc::new(NativeFn {
-                name: "⌁↑⌬ (applied to a path)".to_string(),
-                func: Box::new(move |content_arg| {
-                    let content = match &content_arg {
-                        Value::Str(s) => &**s,
-                        other => {
-                            return Err(Raised(Value::Adt {
-                                tag: Rc::from("InvalidOperation"),
-                                args: Rc::from(vec![Value::Str(Text::from(
-                                    format!("'⌁↑⌬' expects a Str, found {other:?}").as_str(),
-                                ))]),
-                            }));
-                        }
-                    };
-                    let Some(resolved) = resolve_within_root(&root, &path) else {
-                        return Err(Raised(failure(
-                            "PermissionDenied",
-                            &format!("writeFile: '{path}' is outside the allowed root"),
-                        )));
-                    };
-                    match std::fs::write(&resolved, content) {
-                        Ok(()) => Ok(Value::Unit),
-                        Err(e) => Err(Raised(failure(
-                            io_error_tag(&e),
-                            &format!("writeFile: {e}"),
-                        ))),
-                    }
-                }),
-            })))
-        }),
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::marshal::failure;
     use super::*;
+    use obfusku_core::types::Type as CoreType;
+    use obfusku_runtime::Text;
+    use obfusku_runtime::eval::Raised;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// The full host set rooted at `root`, as the CLI assembles it.
+    fn load(root: &Path) -> Natives {
+        super::load(Some(root), &[])
+    }
 
     /// A fresh temp directory per test, used as the filesystem root.
     fn test_root() -> PathBuf {

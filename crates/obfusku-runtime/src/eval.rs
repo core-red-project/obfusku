@@ -1,128 +1,68 @@
-//! The evaluator over the resolved IR — `spec/SEMANTIC_CORE.md` §12–§15.
+//! The evaluator over the resolved IR (`spec/SEMANTIC_CORE.md` §12–§15).
+//!
+//! **Shape.** [`eval`] is a trampoline. Every node in *tail position* (a
+//! function body reached by `Apply`, a `Match` arm's result, a `Let` body)
+//! makes the loop continue in place, so tail recursion runs in constant Rust
+//! stack (§14.1). Every other sub-evaluation is a genuine recursive call,
+//! which is also what makes `Catch`'s TCO carve-out fall out for free: a
+//! `Raised` unwinding through the Rust frames of `body` is caught right
+//! there.
+//!
+//! | Module | Provides |
+//! |---|---|
+//! | `context` | recursion limit, call trace and raise location (per thread) |
+//! | `raise` | [`Raised`], [`EvalResult`] and the runtime's own exceptions |
+//! | `arith` | the operator table |
+//! | `access` | field read/update and array indexing |
+//! | `pattern` | matching a value against a compiled pattern |
+
+mod access;
+mod arith;
+mod context;
+mod pattern;
+mod raise;
+
+pub use context::{TraceFrame, set_recursion_limit, take_trace};
+pub use raise::{EvalResult, Raised};
 
 use crate::env::Env;
-use crate::ir::{Arm, Node, Pat};
-use crate::ops::cmp_operator;
-use crate::pvec::PVec;
-use crate::text::Text;
-use crate::types;
-use crate::value::{ClosureData, Value};
+use crate::ir::{Arm, GlobalCell, Node};
+use crate::persistent::PVec;
+use crate::value::{ClosureData, NativeFn, Value};
+use access::{eval_field, eval_index, eval_update};
+use arith::{eval_binop, eval_unop};
+use context::{Ctx, mark_raise, take_raise_span};
 use obfusku_core::ast::{BinOp, UnOp};
-use obfusku_diagnostics::{Diagnostic, Severity, Span};
-use std::cell::{Cell, RefCell};
-use std::cmp::Ordering;
+use obfusku_diagnostics::{Diagnostic, Span};
+use pattern::bind_pattern;
+use raise::{err_value, limit_error, non_exhaustive_match};
+use std::cell::RefCell;
 use std::rc::Rc;
 
-/// Innermost call-trace frames kept at a raise.
-const TRACE_DEPTH: usize = 12;
-
-/// One function activation seen from a raise: what was called, and where.
-#[derive(Debug, Clone)]
-pub struct TraceFrame {
-    pub function: Rc<str>,
-    pub call_site: Span,
-}
-
-thread_local! {
-    static LIMIT: Cell<usize> = const { Cell::new(usize::MAX) };
-    /// Source location of the most recent raise, for `eval_top`'s diagnostic.
-    static RAISE_SPAN: Cell<Option<Span>> = const { Cell::new(None) };
-    /// `CALLS`' innermost entries at the most recent raise.
-    static RAISE_TRACE: RefCell<Vec<TraceFrame>> = const { RefCell::new(Vec::new()) };
-    /// The active context while a native runs, so a callback into
-    /// `apply_value` continues the same depth count and call trace.
-    static STASH: RefCell<Option<Ctx>> = const { RefCell::new(None) };
-}
-
-/// Per-evaluation state, threaded explicitly: nesting depth against the
-/// recursion limit, and the live function activations for traces.
-#[derive(Default)]
-struct Ctx {
-    depth: usize,
-    limit: usize,
-    calls: Vec<TraceFrame>,
-    /// The current raise already has its trace.
-    captured: bool,
-}
-
-impl Ctx {
-    fn fresh() -> Ctx {
-        Ctx {
-            limit: LIMIT.with(Cell::get),
-            ..Ctx::default()
-        }
-    }
-
-    fn capture(&mut self) {
-        if self.captured {
-            return;
-        }
-        self.captured = true;
-        let from = self.calls.len().saturating_sub(TRACE_DEPTH);
-        RAISE_TRACE.with(|t| {
-            let mut t = t.borrow_mut();
-            t.clear();
-            t.extend(self.calls[from..].iter().rev().cloned());
-        });
-    }
-}
-
-fn mark_raise(span: Span) {
-    RAISE_SPAN.with(|s| s.set(Some(span)));
-}
-
-/// The call trace of the most recent uncaught raise on this thread,
-/// innermost first; cleared by taking it.
-#[must_use]
-pub fn take_trace() -> Vec<TraceFrame> {
-    RAISE_TRACE.with(|t| std::mem::take(&mut *t.borrow_mut()))
-}
-
-/// Caps nested `eval` frames on this thread; exceeding it raises a catchable
-/// `InvalidOperation` instead of overflowing the Rust stack. The caller must
-/// size its stack for the limit it sets.
-pub fn set_recursion_limit(limit: usize) {
-    LIMIT.with(|l| l.set(limit));
-}
-
-/// A §15 `raise` in flight, propagated via `Result::Err` through Rust's
-/// own call stack — a `Catch` frame is "active" for exactly the Rust
-/// frames nested inside its (non-tail) evaluation of `body`.
-#[derive(Debug)]
-pub struct Raised(pub Value);
-
-pub type EvalResult = Result<Value, Raised>;
-
-fn rt_error(span: Span, message: impl Into<String>) -> Diagnostic {
-    Diagnostic {
-        severity: Severity::Error,
-        message: message.into(),
-        primary: span,
-    }
-}
-
-/// Converts an uncaught `raise` into a [`Diagnostic`]; the call trace
-/// stays available through [`take_trace`].
+/// Evaluates `node`, converting an uncaught `raise` into a [`Diagnostic`].
+///
+/// The call trace of that raise stays available through [`take_trace`].
+/// `fallback` locates the error when the raise recorded no location of its
+/// own (the enclosing top-level binding).
 pub fn eval_top(node: &Node, env: &Env, fallback: Span) -> Result<Value, Diagnostic> {
     match eval(node, env) {
         Ok(v) => Ok(v),
-        Err(Raised(payload)) => Err(rt_error(
-            RAISE_SPAN.with(Cell::take).unwrap_or(fallback),
+        Err(Raised(payload)) => Err(Diagnostic::error(
             format!("uncaught exception: {}", crate::ops::show(&payload)),
+            take_raise_span().unwrap_or(fallback),
         )),
     }
 }
 
-/// Applies an already-evaluated `Value` (a `Closure` or `Native`) to an
-/// already-evaluated argument — the same dispatch `Node::Apply` performs
-/// below, for a host-provided native (`ADR-021`) invoking a
-/// caller-supplied function value. Deliberately not trampolined: a
-/// native calling this is never in tail position, and the combinators
-/// that need it iterate in an ordinary Rust loop.
+/// Applies an already-evaluated function value to an already-evaluated
+/// argument: the same dispatch `Node::Apply` performs, for a host native
+/// (`ADR-021`) calling a caller-supplied function.
+///
+/// Deliberately not trampolined: a native calling this is never in tail
+/// position, and the combinators that need it iterate in an ordinary Rust
+/// loop.
 pub fn apply_value(fv: &Value, av: Value) -> EvalResult {
-    let mut cx = STASH
-        .with(|s| s.borrow_mut().take())
-        .unwrap_or_else(Ctx::fresh);
+    let mut cx = Ctx::acquire();
     let out = match fv {
         Value::Closure(c) => eval_in(&c.body, &c.env.push_one(av), &mut cx),
         Value::Native(f) => call_native(f, av, &mut cx),
@@ -131,7 +71,7 @@ pub fn apply_value(fv: &Value, av: Value) -> EvalResult {
             format!("attempted to call a non-function value: {other:?}"),
         ))),
     };
-    STASH.with(|s| *s.borrow_mut() = Some(cx));
+    cx.release();
     out
 }
 
@@ -141,22 +81,20 @@ pub fn apply_value(fv: &Value, av: Value) -> EvalResult {
 const NATIVE_DEPTH_COST: usize = 16;
 
 /// Runs a native with the context parked where its callbacks find it.
-fn call_native(f: &crate::value::NativeFn, av: Value, cx: &mut Ctx) -> EvalResult {
+fn call_native(f: &NativeFn, av: Value, cx: &mut Ctx) -> EvalResult {
     if cx.depth.saturating_add(NATIVE_DEPTH_COST) > cx.limit {
         return Err(Raised(limit_error(cx)));
     }
     cx.depth += NATIVE_DEPTH_COST;
-    STASH.with(|s| *s.borrow_mut() = Some(std::mem::take(cx)));
+    std::mem::take(cx).release();
     let out = (f.func)(av);
-    *cx = STASH
-        .with(|s| s.borrow_mut().take())
-        .unwrap_or_else(Ctx::fresh);
+    *cx = Ctx::acquire();
     cx.depth = cx.depth.saturating_sub(NATIVE_DEPTH_COST);
     out
 }
 
-/// What one evaluation step produced: a finished value, or a node in
-/// tail position to continue with in its own environment. `call` is set
+/// What one evaluation step produced: a finished value, or a node in tail
+/// position to continue with in its own environment. The `TraceFrame` is set
 /// when the continuation is a function body.
 enum Step {
     Done(Value),
@@ -169,6 +107,8 @@ fn done(v: Value) -> Result<Step, Raised> {
     Ok(Step::Done(v))
 }
 
+/// The node being run: borrowed from the caller's tree on entry, owned
+/// (an `Rc` clone) once the trampoline has followed a tail call.
 enum Cur<'a> {
     Borrowed(&'a Node),
     Owned(Rc<Node>),
@@ -183,18 +123,13 @@ impl Cur<'_> {
     }
 }
 
-/// Loops in place for every tail-position node (a function body reached
-/// via `Apply`, a `Match` arm's result) so tail recursion runs in
-/// constant Rust stack space (§14.1). Every other sub-evaluation is a
-/// genuine recursive call, which is what makes `Catch`'s TCO carve-out
-/// fall out for free.
+/// Evaluates `node` in `env`, starting a fresh evaluation (or continuing the
+/// one a native parked).
 pub fn eval(node: &Node, env: &Env) -> EvalResult {
-    let mut cx = STASH
-        .with(|s| s.borrow_mut().take())
-        .unwrap_or_else(Ctx::fresh);
+    let mut cx = Ctx::acquire();
     cx.captured = false;
     let out = eval_in(node, env, &mut cx);
-    STASH.with(|s| *s.borrow_mut() = Some(cx));
+    cx.release();
     out
 }
 
@@ -220,8 +155,8 @@ fn eval_in(node: &Node, env: &Env, cx: &mut Ctx) -> EvalResult {
     }
     cx.depth += 1;
     let depth = cx.depth;
-    // The limit is checked every 16 levels: the stack bound it protects
-    // is coarse, and the check is a hot-path cost.
+    // The limit is checked every 16 levels: the stack bound it protects is
+    // coarse, and the check is a hot-path cost.
     if depth.trailing_zeros() >= 4 && depth > cx.limit {
         cx.depth -= 1;
         return Err(Raised(limit_error(cx)));
@@ -234,8 +169,8 @@ fn eval_in(node: &Node, env: &Env, cx: &mut Ctx) -> EvalResult {
     out
 }
 
-/// The trampoline: returns the result and whether it left a trace entry
-/// for the caller to pop.
+/// The trampoline: returns the result and whether it left a trace entry for
+/// the caller to pop.
 fn run(node: &Node, env: &Env, cx: &mut Ctx) -> (EvalResult, bool) {
     let mut pushed = false;
     let mut cur: Cur = Cur::Borrowed(node);
@@ -304,7 +239,7 @@ fn run(node: &Node, env: &Env, cx: &mut Ctx) -> (EvalResult, bool) {
 }
 
 #[inline(never)]
-fn step_global(cell: &crate::ir::GlobalCell, span: Span) -> EvalResult {
+fn step_global(cell: &GlobalCell, span: Span) -> EvalResult {
     match &*cell.value.borrow() {
         Some(v) => Ok(v.clone()),
         None => Err(Raised(err_value(
@@ -418,10 +353,7 @@ fn step_match(scrutinee: &Node, arms: &[Arm], env: &Env, cx: &mut Ctx) -> Result
     }
     // Defensive: unreachable once typecheck's exhaustiveness check (§17)
     // has run.
-    Err(Raised(Value::Adt {
-        tag: Rc::from("NonExhaustiveMatch"),
-        args: Rc::from(vec![]),
-    }))
+    Err(Raised(non_exhaustive_match()))
 }
 
 #[inline(never)]
@@ -541,243 +473,119 @@ fn step_index(
     eval_index(&av, &iv, span).map(Step::Done)
 }
 
-fn eval_field(bv: &Value, name: &str, span: Span) -> EvalResult {
-    match bv {
-        Value::Adt { tag, args } => match types::field_index(tag, name) {
-            Some(i) if i < args.len() => Ok(args[i].clone()),
-            _ => Err(Raised(err_value(
-                span,
-                format!("'{tag}' has no field '{name}'"),
-            ))),
-        },
-        other => Err(Raised(err_value(
-            span,
-            format!("attempted to read field '{name}' of a non-record value: {other:?}"),
-        ))),
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::{Compiler, Globals};
+    use obfusku_core::ast::{Expr, Literal};
+    use std::rc::Rc;
 
-fn eval_update(bv: &Value, fields: Vec<(&String, Value)>, span: Span) -> EvalResult {
-    let Value::Adt { tag, args } = bv else {
-        return Err(Raised(err_value(
-            span,
-            format!("attempted to update a non-record value: {bv:?}"),
-        )));
-    };
-    let mut new_args = args.to_vec();
-    for (name, v) in fields {
-        match types::field_index(tag, name) {
-            Some(i) if i < new_args.len() => new_args[i] = v,
-            _ => {
-                return Err(Raised(err_value(
-                    span,
-                    format!("'{tag}' has no field '{name}'"),
-                )));
-            }
+    fn sp() -> Span {
+        Span::default()
+    }
+
+    fn int(v: i64) -> Expr {
+        Expr::Lit(Literal::Int(v), sp())
+    }
+
+    fn lambda(param: &str, body: Expr) -> Expr {
+        Expr::Lambda {
+            param: param.into(),
+            param_ty: None,
+            body: Rc::new(body),
+            span: sp(),
         }
     }
-    Ok(Value::Adt {
-        tag: Rc::clone(tag),
-        args: Rc::from(new_args),
-    })
-}
 
-fn eval_index(av: &Value, iv: &Value, span: Span) -> EvalResult {
-    let arr = match av {
-        Value::Array(a) => a,
-        other => {
-            return Err(Raised(err_value(
-                span,
-                format!("attempted to index a non-array value: {other:?}"),
-            )));
+    fn apply(f: Expr, a: Expr) -> Expr {
+        Expr::Apply {
+            func: Box::new(f),
+            arg: Box::new(a),
+            span: sp(),
         }
-    };
-    let i = match iv {
-        Value::Int(i) => *i,
-        other => {
-            return Err(Raised(err_value(
-                span,
-                format!("array index must be Int, found: {other:?}"),
-            )));
-        }
-    };
-    match usize::try_from(i).ok().and_then(|i| arr.get(i)) {
-        Some(v) => Ok(v.clone()),
-        None => Err(Raised(Value::Adt {
-            tag: Rc::from("InvalidOperation"),
-            args: Rc::from(vec![Value::Str(Text::from(format!(
-                "array index out of bounds: index {i}, length {}",
-                arr.len()
-            )))]),
-        })),
     }
-}
 
-/// §20.2's closed operator table. No `Value::Number` fallback, no
-/// Int↔Real coercion — a pair not recognized here is a caller error
-/// (Core that never passed typecheck).
-fn eval_binop(op: BinOp, lv: Value, rv: Value, span: Span) -> EvalResult {
-    use BinOp::{Add, Div, Eq, Ge, Gt, Le, Lt, Mod, Mul, NotEq, Sub, Xor};
-    match (op, lv, rv) {
-        // Fixed-width `i64`: an unrepresentable result raises `IntegerOverflow`,
-        // deterministic and catchable across all build profiles. `Real` has no
-        // equivalent case — IEEE-754 is total (§15.3).
-        (Add, Value::Int(a), Value::Int(b)) => a
-            .checked_add(b)
-            .map(Value::Int)
-            .ok_or_else(|| Raised(integer_overflow(span))),
-        (Add, Value::Real(a), Value::Real(b)) => Ok(Value::Real(a + b)),
-        (Add, Value::Str(ref a), Value::Str(ref b)) => Ok(Value::Str(Text::concat(a, b))),
-
-        (Sub, Value::Int(a), Value::Int(b)) => a
-            .checked_sub(b)
-            .map(Value::Int)
-            .ok_or_else(|| Raised(integer_overflow(span))),
-        (Sub, Value::Real(a), Value::Real(b)) => Ok(Value::Real(a - b)),
-
-        (Mul, Value::Int(a), Value::Int(b)) => a
-            .checked_mul(b)
-            .map(Value::Int)
-            .ok_or_else(|| Raised(integer_overflow(span))),
-        (Mul, Value::Real(a), Value::Real(b)) => Ok(Value::Real(a * b)),
-
-        // §15.3: Int division by zero raises `DivisionByZero`; the one
-        // other unrepresentable case (`MIN_INT / -1`) is `IntegerOverflow`
-        // instead — genuinely a different condition, not a second zero
-        // check. Real follows IEEE-754.
-        (Div, Value::Int(a), Value::Int(b)) => {
-            if b == 0 {
-                Err(Raised(division_by_zero(span)))
-            } else {
-                a.checked_div(b)
-                    .map(Value::Int)
-                    .ok_or_else(|| Raised(integer_overflow(span)))
-            }
-        }
-        (Div, Value::Real(a), Value::Real(b)) => Ok(Value::Real(a / b)),
-
-        // Truncating, sign of dividend (Rust's own `%`); raises on zero,
-        // or `IntegerOverflow` for the same `MIN_INT % -1` case `÷` has.
-        (Mod, Value::Int(a), Value::Int(b)) => {
-            if b == 0 {
-                Err(Raised(division_by_zero(span)))
-            } else {
-                a.checked_rem(b)
-                    .map(Value::Int)
-                    .ok_or_else(|| Raised(integer_overflow(span)))
-            }
-        }
-
-        // `Int` is the common case; keep it off the generic path.
-        (Lt, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a < b)),
-        (Gt, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a > b)),
-        (Le, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a <= b)),
-        (Ge, Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a >= b)),
-        // Generated ordering over any orderable type (`ADR-025`); a bare
-        // `Real` follows IEEE-754, so `NaN` makes all four `false`.
-        (Lt, a, b) => Ok(Value::Bool(matches!(
-            cmp_operator(&a, &b),
-            Some(Ordering::Less)
-        ))),
-        (Gt, a, b) => Ok(Value::Bool(matches!(
-            cmp_operator(&a, &b),
-            Some(Ordering::Greater)
-        ))),
-        (Le, a, b) => Ok(Value::Bool(matches!(
-            cmp_operator(&a, &b),
-            Some(Ordering::Less | Ordering::Equal)
-        ))),
-        (Ge, a, b) => Ok(Value::Bool(matches!(
-            cmp_operator(&a, &b),
-            Some(Ordering::Greater | Ordering::Equal)
-        ))),
-
-        // Total structural equality, including NaN == NaN (§18/§20.2).
-        (Eq, a, b) => Ok(Value::Bool(a.structural_eq(&b))),
-        (NotEq, a, b) => Ok(Value::Bool(!a.structural_eq(&b))),
-
-        (Xor, Value::Bool(a), Value::Bool(b)) => Ok(Value::Bool(a != b)),
-
-        (op, a, b) => Err(Raised(err_value(
-            span,
-            format!(
-                "invalid operand types for operator (typecheck should have rejected this): \
-                 {op:?} on {a:?}, {b:?}"
-            ),
-        ))),
+    fn run_expr(e: &Expr) -> EvalResult {
+        let node = Compiler::new(&mut Globals::new()).expr(e, None);
+        eval(&node, &Env::root())
     }
-}
 
-fn eval_unop(op: UnOp, v: Value, span: Span) -> EvalResult {
-    match (op, v) {
-        (UnOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
-        // `-MIN_INT` is the one unrepresentable case (§20.2).
-        (UnOp::Neg, Value::Int(n)) => n
-            .checked_neg()
-            .map(Value::Int)
-            .ok_or_else(|| Raised(integer_overflow(span))),
-        (UnOp::Neg, Value::Real(n)) => Ok(Value::Real(-n)),
-        (op, v) => Err(Raised(err_value(
-            span,
-            format!(
-                "invalid operand type for operator (typecheck should have rejected this): {op:?} on {v:?}"
-            ),
-        ))),
+    #[test]
+    fn a_lambda_applied_to_an_argument_returns_it() {
+        let got = run_expr(&apply(lambda("x", Expr::Var("x".into(), sp())), int(5)));
+        assert!(matches!(got, Ok(Value::Int(5))));
     }
-}
 
-fn division_by_zero(span: Span) -> Value {
-    mark_raise(span);
-    Value::Adt {
-        tag: Rc::from("DivisionByZero"),
-        args: Rc::from(Vec::new()),
+    #[test]
+    fn applying_a_non_function_is_an_error_value_not_a_panic() {
+        let got = run_expr(&apply(int(1), int(2)));
+        assert!(
+            matches!(got, Err(Raised(Value::Adt { ref tag, .. })) if &**tag == "InvalidOperation")
+        );
     }
-}
 
-fn integer_overflow(span: Span) -> Value {
-    mark_raise(span);
-    Value::Adt {
-        tag: Rc::from("IntegerOverflow"),
-        args: Rc::from(Vec::new()),
+    #[test]
+    fn apply_value_calls_a_closure_and_a_native() {
+        let closure = run_expr(&lambda("x", Expr::Var("x".into(), sp()))).unwrap();
+        assert!(matches!(
+            apply_value(&closure, Value::Int(3)),
+            Ok(Value::Int(3))
+        ));
+        let native = Value::Native(Rc::new(NativeFn {
+            name: "inc".into(),
+            func: Box::new(|v| match v {
+                Value::Int(i) => Ok(Value::Int(i + 1)),
+                other => Ok(other),
+            }),
+        }));
+        assert!(matches!(
+            apply_value(&native, Value::Int(3)),
+            Ok(Value::Int(4))
+        ));
     }
-}
 
-/// Runtime errors are raised as ordinary `Exception::InvalidOperation`
-/// values, not a separate control channel — lets a surface `Catch`
-/// intercept them the same way as a user `raise` (§15).
-/// Anchored at the innermost call in flight rather than at nothing.
-fn limit_error(cx: &Ctx) -> Value {
-    let span = cx.calls.last().map_or_else(Span::default, |f| f.call_site);
-    err_value(span, "recursion limit exceeded")
-}
-
-fn err_value(span: Span, message: impl Into<String>) -> Value {
-    mark_raise(span);
-    Value::Adt {
-        tag: Rc::from("InvalidOperation"),
-        args: Rc::from(vec![Value::Str(Text::from(message.into().as_str()))]),
+    #[test]
+    fn apply_value_on_a_non_function_raises() {
+        assert!(apply_value(&Value::Int(1), Value::Unit).is_err());
     }
-}
 
-/// Matches `pattern` against `scrutinee`, pushing each variable's value
-/// in the order the resolver numbered its slots.
-fn bind_pattern(pattern: &Pat, scrutinee: &Value, out: &mut Vec<Value>) -> bool {
-    match pattern {
-        Pat::Wild => true,
-        Pat::Var => {
-            out.push(scrutinee.clone());
-            true
-        }
-        Pat::Lit(lit) => lit.structural_eq(scrutinee),
-        Pat::Con { tag, args } => match scrutinee {
-            Value::Adt {
-                tag: vtag,
-                args: vargs,
-            } if (Rc::ptr_eq(vtag, tag) || **vtag == **tag) && vargs.len() == args.len() => args
-                .iter()
-                .zip(vargs.iter())
-                .all(|(p, v)| bind_pattern(p, v, out)),
-            _ => false,
-        },
+    #[test]
+    fn an_uncaught_raise_becomes_a_diagnostic_at_its_span() {
+        let at = Span::new(obfusku_diagnostics::SourceId(0), 4, 9);
+        let node = Compiler::new(&mut Globals::new()).expr(
+            &Expr::Raise {
+                value: Box::new(Expr::Constructor {
+                    tag: "Boom".into(),
+                    args: vec![],
+                    span: sp(),
+                }),
+                span: at,
+            },
+            None,
+        );
+        let d = eval_top(&node, &Env::root(), sp()).unwrap_err();
+        assert_eq!(d.primary, at);
+        assert_eq!(d.message, "uncaught exception: Boom");
+    }
+
+    #[test]
+    fn deep_native_recursion_hits_the_limit_instead_of_the_stack() {
+        set_recursion_limit(10_000);
+        let native = Rc::new(RefCell::new(None::<Value>));
+        let slot = Rc::clone(&native);
+        let recurse = Value::Native(Rc::new(NativeFn {
+            name: "recurse".into(),
+            func: Box::new(move |v| {
+                let me = slot.borrow().clone().unwrap();
+                apply_value(&me, v)
+            }),
+        }));
+        *native.borrow_mut() = Some(recurse.clone());
+        let got = apply_value(&recurse, Value::Unit);
+        set_recursion_limit(usize::MAX);
+        *native.borrow_mut() = None;
+        assert!(
+            matches!(got, Err(Raised(Value::Adt { ref tag, .. })) if &**tag == "InvalidOperation")
+        );
     }
 }

@@ -1,74 +1,84 @@
-# Obfusku Assistant Guide
+# Obfusku
 
-## Project Purpose
-Obfusku is a symbolic, ritualistic esoteric programming language (Esolang) where symbols carry semantic primacy. Programs are parsed into a surface AST, desugared into a typed Core AST, checked via a Hindley-Milner type inference engine with user-defined algebraic data types (ADTs), and evaluated using an environment-frame tree with tail-call optimization (TCO).
+## Purpose
+An esoteric programming language where symbols embody meaning and ritual execution defines semantics.
 
-## Repository Topology
-This repository is organized as a **Non-Monolithic Cargo workspace** consisting of seven modular crates under `crates/`:
+Obfusku investigates symbolic purity in programming language design. Rather than layering keywords on top of ASCII syntax, it grounds computation in immutable Core semantics: curried functions, algebraic data types, tail-call optimization, and sound Hindley-Milner type inference. Source code is tokenized with multi-byte Unicode preservation, parsed into surface AST, desugared into frozen Core AST, verified through strict Hindley-Milner inference, and executed on a lexical environment tree.
 
-- `crates/obfusku-core`: Frozen Core AST, type vocabulary, and literal/operator definitions (`spec/SEMANTIC_CORE.md`).
-- `crates/obfusku-diagnostics`: Spans, diagnostic levels (Error, Warning, Note), and `SourceMap` with line/column resolution.
-- `crates/obfusku-syntax`: Lexer (`tokenize`), recursive descent parser (`parse`), surface AST, and desugaring (`desugar`) into Core AST.
-- `crates/obfusku-typecheck`: Hindley-Milner type inference, unification, ADT registry, type arity validation, and pattern exhaustiveness checking.
-- `crates/obfusku-runtime`: Core AST evaluator, lexical environments (`Env`), closures, tail-call optimization, exception unwinding (`Raise`/`Catch`), and native function host bindings.
-- `crates/obfusku-fmt`: Canonical source code formatter implementing strict operator precedence and indentation rules.
-- `crates/obfusku-cli`: Command-line interface (`obfusku`), module resolution (`resolve_imports`), bundled standard library (`stdlib.obk`), and interactive REPL (`ReplSession`).
+## Topology
+`workspace` — Non-monolithic Cargo workspace consisting of 8 modular crates under `crates/`:
 
-## Standard Command Surface
-Use `just` to run common workflow tasks:
+- `crates/obfusku-core`: Frozen Core AST, semantic types, literal and operator vocabulary (`spec/SEMANTIC_CORE.md`).
+- `crates/obfusku-diagnostics`: Source spans, diagnostic levels (Error, Warning, Note), and `SourceMap` with line/column resolution.
+- `crates/obfusku-syntax`: Multi-byte UTF-8 lexer, recursive descent parser, surface AST, and desugaring into Core AST.
+- `crates/obfusku-typecheck`: Principal Hindley-Milner type inference (Algorithm W), ADT registry, type arity, and pattern exhaustiveness.
+- `crates/obfusku-runtime`: Core AST evaluator, lexical environments (`Env`), closures, constant-stack tail-call optimization, exception unwinding, and native host bindings.
+- `crates/obfusku-fmt`: Canonical source code formatter implementing strict operator precedence and semantic indentation rules.
+- `crates/obfusku-lsp`: Language Server Protocol (LSP) daemon providing real-time diagnostics over JSON-RPC.
+- `crates/obfusku-cli`: Command-line interface (`obfusku`), module resolution, bundled standard library (`stdlib.obk`), and interactive REPL (`ReplSession`).
+
+## Commands
+All workflows are orchestrated via the task runner (`Justfile`). Direct Cargo equivalents are supported across all targets:
 
 ```bash
-just install     # Bootstrap toolchain components and install the git hooks
-just dev         # Start interactive REPL for local testing
-just build       # Build all workspace crates
-just test        # Run workspace test suite
-just typecheck   # Run compiler type checking across all targets
-just lint        # Run Clippy static analysis with warnings denied
-just format      # Format all workspace code with rustfmt
-just format-check # Verify formatting without modifying files
-just deny        # Audit dependencies (advisories, licenses, sources); DENY_OFFLINE=1 skips the advisory fetch
-just check       # Run the complete quality gate (format-check, lint, typecheck, test, deny); never modifies files
-just bench       # Startup and core-operation timings (not part of check)
-just clean       # Clean build artifacts and caches
+just install       # Bootstrap toolchain components and install git hooks
+just dev           # Start interactive REPL for local testing
+just check         # The gate: format-check, lint, typecheck, test, deny. Must pass before any commit/push
+just build         # Build all workspace crates (cargo build --workspace)
+just test          # Run workspace test suite (cargo test --workspace)
+just typecheck     # Compiler type checking across all targets
+just lint          # Run Clippy static analysis with warnings denied
+just format        # Format all workspace code with rustfmt
+just format-check  # Verify formatting without modifying files
+just deny          # Audit dependencies (cargo-deny: advisories, licenses, bans, sources)
+just bench         # Startup and core-operation benchmarks (benches/)
+just clean         # Clean build artifacts and caches
 ```
 
-Direct Cargo equivalents are also available (e.g. `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`).
-
-## Where Things Go
+## Where things go
 | What | Where |
 |---|---|
-| Language semantics, grammar, decisions | `spec/` (`spec/adr/ADR-NNN-*.md` for each decision) |
-| Planning and open work | `docs/ROADMAP.md`; shipped changes in `CHANGELOG.md` |
-| Images and other assets used by docs | `docs/assets/` |
-| Compiler, runtime, CLI, LSP code | `crates/<crate>/src/`; integration tests in `crates/<crate>/tests/` |
-| Bundled standard library | `crates/obfusku-cli/src/stdlib.obk` |
-| Manifest, capabilities, dependencies | `crates/obfusku-cli/src/{manifest,capability,deps}.rs` (`ADR-029`) |
-| Example programs | `examples/` |
+| Language semantics, grammar, normative specs | `spec/` (`spec/adr/ADR-NNN-*.md` for architectural decisions) |
+| Core AST and frozen semantic types | `crates/obfusku-core/` |
+| Diagnostic reporting, spans, source mapping | `crates/obfusku-diagnostics/` |
+| Lexer, parser, surface AST, desugaring | `crates/obfusku-syntax/` |
+| Type inference, exhaustiveness, ADT registry | `crates/obfusku-typecheck/` |
+| Evaluator, lexical environments, TCO, natives | `crates/obfusku-runtime/` |
+| Source code formatter engine | `crates/obfusku-fmt/` |
+| Language Server Protocol implementation | `crates/obfusku-lsp/` |
+| CLI entrypoint, module resolution, REPL | `crates/obfusku-cli/` |
+| Bundled standard library ambient prelude | `crates/obfusku-cli/src/stdlib.obk` |
+| Manifest capabilities and dependencies | `crates/obfusku-cli/src/{manifest,capability,deps}.rs` (`ADR-029`) |
+| Integration tests per crate | `crates/<crate>/tests/` |
+| Executable canonical example suite | `examples/` |
 | Benchmark fixtures | `benches/` |
-| Git hooks, commit-message checks | `.githooks/`, `scripts/` |
-| CI and release workflows | `.github/workflows/` |
+| Documentation, architecture, roadmap | `docs/` (`docs/ROADMAP.md`, `ARCHITECTURE.md`) |
+| Visual assets and banners | `docs/assets/` (`docs/assets/obfusku-banner.png`) |
+| Git hooks and validation scripts | `.githooks/`, `scripts/` |
+| Continuous Integration workflows | `.github/workflows/` (`ci.yml`, `release.yml`) |
 
-Git hooks: `just install` points `core.hooksPath` at `.githooks/` (pre-commit runs `just check`; commit-msg enforces Conventional Commits). Release notes come from `git cliff` (`cliff.toml`).
+Git hooks: `just install` points `core.hooksPath` at `.githooks/` (pre-commit enforces `just check`; commit-msg enforces Conventional Commits). Release notes are managed by `git cliff` (`cliff.toml`).
 
 ## Architecture & Data Flow
-1. **Source Text** → `obfusku-syntax::lexer`: UTF-8 token stream with accurate spans.
+1. **Source Text** → `obfusku-syntax::lexer`: UTF-8 token stream with accurate byte spans.
 2. **Tokens** → `obfusku-syntax::parser`: Surface syntax AST (`Expression`, `Declaration`, `Module`).
 3. **Surface AST** → `obfusku-syntax::desugar`: Lowered into Core AST (`obfusku_core::ast::Module`). Synthesizes exception constructors and normalizes let/letrec groups.
 4. **Core AST** → `obfusku-typecheck::check`: Type inference with ADT registry, checking exhaustiveness and returning typed bindings.
-5. **Typed Core AST** → `obfusku-runtime::evaluate`: Evaluated in lexical environments with TCO and exception catching.
+5. **Typed Core AST** → `obfusku-runtime::evaluate`: Evaluated in lexical environments with trampoline TCO and exception catching.
 
-## Coding Conventions
-- **Language Standard**: Rust 2021 edition, toolchain pinned in `rust-toolchain.toml`.
+## Conventions
+- **Language Standard**: Rust 2024 edition (`rust-version = "1.93"`), pinned in `rust-toolchain.toml`.
 - **Code Style**: Format with `rustfmt` (`rustfmt.toml`). Maximum line width is 100 characters.
-- **Linting**: All code must pass `clippy` with `#![deny(warnings)]`. Avoid unneeded returns, handle complex types cleanly, and annotate intentional exceptions with targeted `#[allow(...)]`.
-- **Error Handling**: Use `obfusku_diagnostics::Diagnostic` rather than panics in language pipeline stages.
+- **Linting**: Workspace-level `#![deny(warnings)]` via Clippy (`all` and `pedantic` warned). Allowances in `Cargo.toml` (`too_many_lines`, `float_cmp`, `match_same_arms`) are intentional compiler/spec design choices.
+- **Error Handling**: Use `obfusku_diagnostics::Diagnostic` rather than panics or `unwrap()` in compiler and runtime pipeline stages.
+- **Commits**: Follow Conventional Commits strictly (`feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `test:`, `chore:`, `perf:`).
+- **Changelog**: All notable changes must be documented in [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`.
 - **Comments & Documentation**: Keep comments proportional, precise, and timeless. Cite formal specification sections (`spec/SEMANTIC_CORE.md`, `spec/CONCRETE_SYMBOLIC_GRAMMAR.md`, `spec/adr/`) rather than repeating entire specification text.
 
-## Commit Conventions
-Follow Conventional Commits:
-- `feat: ...` for new features or capabilities
-- `fix: ...` for bug fixes
-- `docs: ...` for documentation updates
-- `refactor: ...` for code refactoring without behavior change
-- `test: ...` for test additions or improvements
-- `chore: ...` for tooling, CI, or dependency maintenance
+## Do not
+- Do not bypass or weaken `just check` — it is the mandatory quality gate before commit or push.
+- Do not use `unsafe` code anywhere in the repository (`unsafe_code = "forbid"` is enforced workspace-wide).
+- Do not introduce `unwrap()`, `expect()`, or panics in user-facing compiler, typecheck, or runtime pipelines.
+- Do not add comments explaining obvious code; keep code clean and self-explanatory.
+- Do not invent non-standard syntax; all language behavior is governed strictly by `spec/`.
+- Do not mention internal standard IDs or rule names in code or documentation.

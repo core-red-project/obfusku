@@ -3,7 +3,7 @@ name = "obfusku-lsp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Language Server Protocol implementation for Obfusku — links obfusku-syntax and obfusku-typecheck directly."
+description = "Language Server Protocol implementation for Obfusku — analysis is the CLI pipeline (obfusku-cli), so editor and `obfusku check` agree."
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
@@ -17,9 +17,6 @@ path = "src/main.rs"
 
 [dependencies]
 obfusku-diagnostics = { version = "1.1.0", path = "../obfusku-diagnostics" }
-obfusku-core = { version = "1.1.0", path = "../obfusku-core" }
-obfusku-typecheck = { version = "1.1.0", path = "../obfusku-typecheck" }
-obfusku-syntax = { version = "1.1.0", path = "../obfusku-syntax" }
 obfusku-cli = { version = "1.1.0", path = "../obfusku-cli" }
 lsp-server = "0.7"
 lsp-types = "0.97"

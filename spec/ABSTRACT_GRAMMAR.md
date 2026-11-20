@@ -1,5 +1,7 @@
 # Obfusku — Abstract Grammar
 
+<!-- Formal specification of Obfusku's structural constructions, declarations, and desugaring targets. -->
+
 Status: **established** — structural, zero concrete glyphs. This document
 answers "what constructions exist and how do they compose," not "what do
 they look like." It sits between `SEMANTIC_CORE.md` (frozen) and
@@ -354,3 +356,8 @@ friction gets investigated, not patched away:
 No case required weakening or reinterpreting anything in
 `SEMANTIC_CORE.md`. The next document is a Concrete Symbolic Grammar —
 choosing how these already-fixed structures are actually written.
+
+---
+
+*Last updated: 2026-10-15*
+

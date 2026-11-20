@@ -1,5 +1,7 @@
 # Obfusku — Design Vision
 
+<!-- Core design philosophy, foundational laws, and historical language design constraints. -->
+
 Status: **established** — see §10 for the remaining open items. Nothing
 here obligates any part of the old `src/`, `LANGUAGE_SPEC.md`, or grimoires
 to survive; they are historical evidence of intent, not constraints. Glyphs
@@ -328,3 +330,8 @@ unrelated operations just to keep the "fixed meaning" rule technically true.
 5. **What (if anything) survives from the old symbol table — resolved.**
    `GLYPH_SYSTEM_DESIGN.md` records which historical glyphs were kept,
    rejected, or repurposed.
+
+---
+
+*Last updated: 2026-10-15*
+

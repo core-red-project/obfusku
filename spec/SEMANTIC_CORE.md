@@ -1,5 +1,7 @@
 # Obfusku — Semantic Core
 
+<!-- Frozen formal semantics, core calculus definitions, and desugaring invariants for the Obfusku language. -->
+
 Status: **formal semantics, zero concrete glyphs — frozen.** If any sentence in this document requires a symbol
 to be understood, it has failed its own purpose. All syntax below is
 abstract (named forms: `Apply`, `Lambda`, `Match`, …), not a proposal for
@@ -1228,3 +1230,8 @@ sequences, and guaranteed tail-call elimination — are both now resolved
 elsewhere in this document (§9.1, §14.1) rather than left open. Nothing
 here reopens either decision; this table is corrected to stop implying
 otherwise.
+
+---
+
+*Last updated: 2026-10-15*
+

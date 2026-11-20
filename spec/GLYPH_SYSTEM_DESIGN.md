@@ -1,5 +1,7 @@
 # Obfusku — Glyph System Design
 
+<!-- Structural rationale, semantic roots, and modifier axes for Obfusku's concrete symbolic vocabulary. -->
+
 Status: **established** — built on the frozen `SEMANTIC_CORE.md` and the
 established `ABSTRACT_GRAMMAR.md`. The vocabulary here is the one
 `CONCRETE_SYMBOLIC_GRAMMAR.md` (frozen) assigns concrete tokens to.
@@ -922,3 +924,8 @@ next document downstream should be the Concrete Symbolic Grammar: exact
 codepoints and rendering — not another semantics or grammar pass. (ASCII
 fallbacks, mentioned here in an earlier draft, are not part of that
 handoff — see §1: Obfusku is glyph-pure, by design, not by omission.)
+
+---
+
+*Last updated: 2026-10-15*
+

@@ -1,5 +1,7 @@
 # Obfusku — Implementation Architecture
 
+<!-- Specification of the Rust multi-crate workspace layout, crate boundaries, and dependency graph. -->
+
 Status: **established.** This is the current Rust workspace layout, not a
 proposal — the crate boundaries and dependency graph below match
 `crates/` as built.
@@ -579,3 +581,8 @@ crate scaffolding — each is a follow-on decision, not a foundational gap.
 
 All ten pass. No boundary needs revisiting before this becomes the basis
 for the next, code-writing step.
+
+---
+
+*Last updated: 2026-10-15*
+

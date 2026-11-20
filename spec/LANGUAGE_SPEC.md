@@ -1,5 +1,7 @@
 # Obfusku Language Specification
 
+<!-- Normative entry point defining epistemic boundaries and domain authority across the specification suite. -->
+
 **Status: normative entry point.** This document does not restate rules
 already defined elsewhere in `spec/` — it establishes the epistemic
 boundary this specification operates under, maps each design domain to
@@ -181,3 +183,8 @@ work tracked in `docs/ROADMAP.md`.
 or evaluator is genuinely missing from `spec/` — not merely
 under-explored, but actually absent — that is a defect in `spec/` to be
 raised and fixed there, as the normative specification is the sole source of truth.
+
+---
+
+*Last updated: 2026-10-15*
+

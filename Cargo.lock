@@ -139,10 +139,7 @@ dependencies = [
  "lsp-server",
  "lsp-types",
  "obfusku-cli",
- "obfusku-core",
  "obfusku-diagnostics",
- "obfusku-syntax",
- "obfusku-typecheck",
  "percent-encoding",
  "serde_json",
 ]

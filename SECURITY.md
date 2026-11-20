@@ -5,7 +5,7 @@
 If you find a security vulnerability in **Obfusku**, report it privately before disclosing it publicly.
 
 **Preferred channel:**
-Email — `legal.sxnnyside@sxnnysideproject.com`
+Email — `security.sxnnyside@sxnnysideproject.com`
 
 **Alternative:**
 [GitHub Private Security Advisory](https://github.com/core-red-project/obfusku/security/advisories/new)
@@ -49,4 +49,4 @@ For ecosystem-wide security concerns, use the email above.
 
 ---
 
-*Obfusku is a Core Red Project. Part of the [Sxnnyside Project](https://sxnnysideproject.com).*
+*Obfusku — A Core Red Project. Part of the [Sxnnyside Project](https://sxnnysideproject.com) ecosystem.*

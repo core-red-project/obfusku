@@ -1,5 +1,7 @@
 # Obfusku — Roadmap
 
+<!-- Snapshot of implemented language features and pending work tracked against the formal specification. -->
+
 **Status: project tracking, not normative.** This document is not part of
 `spec/` and carries no authority over language semantics — `spec/LANGUAGE_SPEC.md`
 §1 is explicit that only `spec/` says what the language *is*. This is a
@@ -141,3 +143,8 @@ is a statement that the language is "done" without it.
 - Shrink `Value` (40 bytes today) and specialize `Int` operators in the IR; both are the next measured levers — → `spec/adr/ADR-028-ambient-shadowing-resolved-runtime-and-traces.md`
 - Reconsider arbitrary-precision integers against `spec/adr/ADR-008-int-overflow-semantics.md`
 - `Real` literal localization — a decimal comma conflicts with `,` as the list separator, so this needs a different notation, not a flag — → `spec/CONCRETE_SYMBOLIC_GRAMMAR.md` §20
+
+---
+
+*Last updated: 2026-10-15*
+

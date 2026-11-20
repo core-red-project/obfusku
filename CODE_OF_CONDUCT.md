@@ -33,6 +33,12 @@ Collaboration here is based on what you bring to the project. Background, identi
 
 ---
 
+## Reporting
+
+Conduct issues can be reported privately to `support.sxnnyside@sxnnysideproject.com`. Reports are handled directly by the maintainer and kept confidential to the extent possible while resolving the issue.
+
+---
+
 ## Enforcement
 
 Violations are handled directly. A first instance gets a clear explanation of what went wrong and what's expected. Repeated or severe violations result in removal from the project without further discussion.
@@ -47,4 +53,4 @@ This Code of Conduct applies to all project spaces: issues, pull requests, commi
 
 ---
 
-*Obfusku is a Core Red Project. Part of the [Sxnnyside Project](https://sxnnysideproject.com).*
+*Obfusku — A Core Red Project. Part of the [Sxnnyside Project](https://sxnnysideproject.com) ecosystem.*

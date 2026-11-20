@@ -20,7 +20,7 @@ assignees: ""
 
 - OS:
 - Obfusku version:
-- Rust version: <!-- e.g. Rust 1.93.0 -->
+- Rust: <!-- e.g. Rust 1.93 -->
 
 ## Additional context
 

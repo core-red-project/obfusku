@@ -1,5 +1,7 @@
 # Obfusku — Concrete Symbolic Grammar
 
+<!-- Normative concrete token assignments, symbolic grammar productions, and syntactic resolution rules. -->
+
 Status: **frozen.**
 
 ## 1. Status and relationship to previous documents
@@ -1094,3 +1096,8 @@ counter ≔˚ 0
 Nothing above blocks implementing a parser from this document as
 written; each is a follow-on detail, not an ambiguity in the grammar
 itself.
+
+---
+
+*Last updated: 2026-10-15*
+
