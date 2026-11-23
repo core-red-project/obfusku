@@ -5,10 +5,22 @@ set -euo pipefail
 
 : "${TARGET:?set TARGET to a Rust target triple}"
 case "$TARGET" in
-  x86_64-unknown-linux-gnu) suffix=linux-x86_64; ext="" ;;
-  aarch64-apple-darwin)     suffix=macos-aarch64; ext="" ;;
-  x86_64-pc-windows-msvc)   suffix=windows-x86_64; ext=".exe" ;;
-  *) echo "unsupported TARGET: $TARGET" >&2; exit 1 ;;
+x86_64-unknown-linux-gnu)
+  suffix=linux-x86_64
+  ext=""
+  ;;
+aarch64-apple-darwin)
+  suffix=macos-aarch64
+  ext=""
+  ;;
+x86_64-pc-windows-msvc)
+  suffix=windows-x86_64
+  ext=".exe"
+  ;;
+*)
+  echo "unsupported TARGET: $TARGET" >&2
+  exit 1
+  ;;
 esac
 
 cargo build --release --locked --target "$TARGET" -p obfusku-cli -p obfusku-lsp

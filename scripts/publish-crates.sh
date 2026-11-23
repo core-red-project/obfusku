@@ -18,9 +18,12 @@ CRATES=(
 MAX_NEW="${MAX_NEW:-${#CRATES[@]}}"
 DRY=""
 case "${1:-}" in
-  "") ;;
-  --dry-run) DRY="--dry-run" ;;
-  *) echo "usage: $0 [--dry-run]   (MAX_NEW=N limits uploads per run)" >&2; exit 2 ;;
+"") ;;
+--dry-run) DRY="--dry-run" ;;
+*)
+  echo "usage: $0 [--dry-run]   (MAX_NEW=N limits uploads per run)" >&2
+  exit 2
+  ;;
 esac
 
 new=0

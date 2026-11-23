@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
-# Blocks a commit when the quality gate fails; `just check` never rewrites files.
+# Blocks a commit when the quality gate fails. `just check` never rewrites files:
+# if formatting fails, run `just format` and stage the result.
 set -euo pipefail
+
+if ! command -v just >/dev/null 2>&1; then
+  echo "pre-commit: 'just' is not installed. See the README, then run: just install" >&2
+  exit 1
+fi
+
 exec just check

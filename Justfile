@@ -30,6 +30,13 @@ typecheck:
 lint:
     cargo clippy --workspace --all-targets --locked -- -D warnings
 
+# Lint and format-check the shell scripts and the installer
+lint-shell:
+    @command -v shellcheck >/dev/null || { echo "shellcheck is missing: https://www.shellcheck.net" >&2; exit 1; }
+    @command -v shfmt >/dev/null || { echo "shfmt is missing: https://github.com/mvdan/sh" >&2; exit 1; }
+    shellcheck scripts/*.sh install.sh .githooks/*
+    shfmt -d -i 2 scripts/*.sh install.sh .githooks/*
+
 # Audit dependencies: advisories, licenses, sources.
 # DENY_OFFLINE=1 reuses the cached advisory database instead of fetching it.
 deny:
@@ -45,7 +52,7 @@ format-check:
     cargo fmt --all --check
 
 # Run the complete quality gate (non-mutating)
-check: format-check lint typecheck test deny
+check: format-check lint lint-shell typecheck test deny
 
 # Remove build artifacts and caches
 clean:

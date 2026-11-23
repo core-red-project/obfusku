@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# A release is never cancelled midway: a half-published tag is worse than a queued one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   verify-version:
     name: Verify version

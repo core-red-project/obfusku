@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
-# commit-msg: blocks a commit whose subject is not a Conventional Commits message.
+# Blocks a commit whose message is not a Conventional Commit.
+# The same script validates every commit of a pull request in CI.
 set -euo pipefail
+
 exec "$(git rev-parse --show-toplevel)/scripts/check-commit-message.sh" "$1"

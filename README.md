@@ -175,7 +175,7 @@ utils = { github = "owner/repo", tag = "v1.2.0" }
 
 ## Architecture
 
-For a detailed breakdown of components, data flow, and design constraints, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For a detailed breakdown of components, data flow, and design constraints, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```
 obfusku/

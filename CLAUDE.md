@@ -48,15 +48,15 @@ just clean         # Clean build artifacts and caches
 | Language Server Protocol implementation | `crates/obfusku-lsp/` |
 | CLI entrypoint, module resolution, REPL | `crates/obfusku-cli/` |
 | Bundled standard library ambient prelude | `crates/obfusku-cli/src/stdlib.obk` |
-| Manifest capabilities and dependencies | `crates/obfusku-cli/src/project/{manifest,deps}.rs`, `natives/capability.rs` (`ADR-029`) |
+| Manifest capabilities and dependencies | `crates/obfusku-cli/src/project/manifest.rs`, `crates/obfusku-cli/src/natives/capability.rs` |
 | Integration tests per crate | `crates/<crate>/tests/` |
 | Built-in exception table (shared by syntax, typecheck, runtime) | `crates/obfusku-core/src/exception.rs` |
 | Executable canonical example suite | `examples/` |
 | Benchmark fixtures | `benches/` |
-| Documentation, architecture, roadmap | `docs/` (`docs/ROADMAP.md`, `ARCHITECTURE.md`) |
-| Visual assets and banners | `docs/assets/` (`docs/assets/obfusku-banner.png`) |
+| Documentation, architecture, roadmap | `docs/` |
+| Visual assets and banners | `docs/assets/` |
 | Git hooks and validation scripts | `.githooks/`, `scripts/` |
-| Continuous Integration workflows | `.github/workflows/` (`ci.yml`, `release.yml`) |
+| Continuous Integration workflows | `.github/workflows/` |
 
 Git hooks: `just install` points `core.hooksPath` at `.githooks/` (pre-commit enforces `just check`; commit-msg enforces Conventional Commits). Release notes are managed by `git cliff` (`cliff.toml`).
 
