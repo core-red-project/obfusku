@@ -140,9 +140,7 @@ mod tests {
         let mut errors = Vec::new();
         let types = c.infer_group(members, &TypeEnv::new(), &mut errors);
         match types {
-            Some(types) if errors.is_empty() => {
-                Ok(types.iter().map(|t| c.resolve(t)).collect())
-            }
+            Some(types) if errors.is_empty() => Ok(types.iter().map(|t| c.resolve(t)).collect()),
             _ => Err(errors),
         }
     }

@@ -7,7 +7,7 @@ use crate::project::deps::Packages;
 use crate::project::entry::EntryPoint;
 use crate::project::manifest::Capabilities;
 use crate::project::modules::ModuleSource;
-use obfusku_diagnostics::{Diagnostic, Severity};
+use obfusku_diagnostics::Diagnostic;
 use obfusku_runtime::Value;
 use std::path::Path;
 
@@ -81,11 +81,10 @@ fn trace_notes(trace: &[obfusku_runtime::eval::TraceFrame]) -> Vec<Diagnostic> {
         } else {
             String::new()
         };
-        notes.push(Diagnostic {
-            severity: Severity::Note,
-            message: format!("called '{}' from here{repeat}", frame.function),
-            primary: frame.call_site,
-        });
+        notes.push(Diagnostic::note(
+            format!("called '{}' from here{repeat}", frame.function),
+            frame.call_site,
+        ));
     }
     notes
 }

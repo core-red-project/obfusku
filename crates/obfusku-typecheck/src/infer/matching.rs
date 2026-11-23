@@ -233,7 +233,10 @@ mod tests {
     #[test]
     fn a_variable_pattern_binds_at_the_scrutinee_type() {
         let mut c = checker();
-        let m = matching(int(1), vec![arm(Pattern::Var("n".into(), span()), var("n"))]);
+        let m = matching(
+            int(1),
+            vec![arm(Pattern::Var("n".into(), span()), var("n"))],
+        );
         let ty = c.infer(&m, &TypeEnv::new()).expect("infers");
         assert_eq!(c.resolve(&ty), Type::Int);
     }
@@ -241,7 +244,10 @@ mod tests {
     #[test]
     fn a_literal_pattern_of_the_wrong_type_is_rejected() {
         let mut c = checker();
-        let m = matching(string("s"), vec![arm(lit(1), int(0)), arm(wildcard(), int(1))]);
+        let m = matching(
+            string("s"),
+            vec![arm(lit(1), int(0)), arm(wildcard(), int(1))],
+        );
         let errors = c.infer(&m, &TypeEnv::new()).expect_err("mismatch");
         assert_eq!(
             errors[0].message,
@@ -278,7 +284,10 @@ mod tests {
     #[test]
     fn a_constructor_pattern_with_the_wrong_arity_says_how_many() {
         let mut c = option_checker();
-        let m = matching(int(1), vec![arm(some(vec![]), int(0)), arm(wildcard(), int(1))]);
+        let m = matching(
+            int(1),
+            vec![arm(some(vec![]), int(0)), arm(wildcard(), int(1))],
+        );
         let errors = c.infer(&m, &TypeEnv::new()).expect_err("arity");
         assert_eq!(
             errors[0].message,
@@ -318,7 +327,11 @@ mod tests {
                 args: vec![],
                 span: span(),
             },
-            vec![arm(any(), int(0)), arm(any(), int(1)), arm(wildcard(), int(2))],
+            vec![
+                arm(any(), int(0)),
+                arm(any(), int(1)),
+                arm(wildcard(), int(2)),
+            ],
         );
         c.infer(&m, &TypeEnv::new()).expect("still well typed");
         assert_eq!(c.warnings.len(), 1);
@@ -335,7 +348,11 @@ mod tests {
                 args: vec![],
                 span: span(),
             },
-            vec![arm(narrow, int(0)), arm(some(vec![wildcard()]), int(1)), arm(wildcard(), int(2))],
+            vec![
+                arm(narrow, int(0)),
+                arm(some(vec![wildcard()]), int(1)),
+                arm(wildcard(), int(2)),
+            ],
         );
         c.infer(&m, &TypeEnv::new()).expect("well typed");
         assert!(c.warnings.is_empty());

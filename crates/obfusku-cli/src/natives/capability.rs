@@ -18,7 +18,7 @@
 use super::marshal::failure;
 use crate::project::manifest::{Capabilities, FsAccess};
 use obfusku_core::ast::{Expr, Module};
-use obfusku_diagnostics::{Diagnostic, Severity};
+use obfusku_diagnostics::Diagnostic;
 use obfusku_runtime::Value;
 use obfusku_runtime::eval::Raised;
 use obfusku_runtime::value::NativeFn;
@@ -117,11 +117,7 @@ pub fn denied_uses(module: &Module, denied: &HashMap<&str, &str>) -> Vec<Diagnos
                 && let Some(family) = denied.get(name.as_str())
                 && !own.contains(name.as_str())
             {
-                out.push(Diagnostic {
-                    severity: Severity::Error,
-                    message: denial_message(name, family),
-                    primary: *span,
-                });
+                out.push(Diagnostic::error(denial_message(name, family), *span));
             }
         });
     }

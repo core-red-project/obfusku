@@ -5,8 +5,8 @@
 //! structural: it recurses into constructor fields, so a hole in a nested
 //! position (`Some(Err(_))` missing) is found, not just one at the top.
 
-use super::annotation::instantiate_core_type;
 use super::Checker;
+use super::annotation::instantiate_core_type;
 use crate::types::Type;
 use obfusku_core::ast::{Literal, Pattern};
 use obfusku_diagnostics::{Diagnostic, Span};
@@ -241,7 +241,10 @@ mod tests {
         let c = nested_checker();
         let ty = Type::Adt("Result".into(), vec![Type::Int, Type::Str]);
         let error = check(&c, &ty, &[ctor("Ok", vec![wildcard()])]).expect_err("missing Err");
-        assert_eq!(error.message, "non-exhaustive match: missing case(s) for Err");
+        assert_eq!(
+            error.message,
+            "non-exhaustive match: missing case(s) for Err"
+        );
     }
 
     #[test]

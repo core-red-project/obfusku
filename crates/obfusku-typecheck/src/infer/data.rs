@@ -132,8 +132,7 @@ impl Checker {
         env: &TypeEnv,
     ) -> Infer<Type> {
         let base_ty = self.infer(base, env)?;
-        self.record_field(&base_ty, name, span)
-            .map_err(|d| vec![d])
+        self.record_field(&base_ty, name, span).map_err(|d| vec![d])
     }
 
     /// `base ⟨ name ≔ value ⟩`: every field keeps its declared type, and the
@@ -378,7 +377,10 @@ mod tests {
     #[test]
     fn a_field_read_has_the_declared_field_type() {
         let mut c = checker_with(&[point_decl()]);
-        assert_eq!(run(&mut c, &field(point(), "x")).expect("infers"), Type::Int);
+        assert_eq!(
+            run(&mut c, &field(point(), "x")).expect("infers"),
+            Type::Int
+        );
     }
 
     #[test]
@@ -416,10 +418,12 @@ mod tests {
         let base = c.fresh();
         let mut env = TypeEnv::new();
         env.insert("p".into(), crate::types::Scheme::monomorphic(base));
-        let errors = c
-            .infer(&field(var("p"), "x"), &env)
-            .expect_err("ambiguous");
-        assert!(errors[0].message.contains("declared by more than one record"));
+        let errors = c.infer(&field(var("p"), "x"), &env).expect_err("ambiguous");
+        assert!(
+            errors[0]
+                .message
+                .contains("declared by more than one record")
+        );
     }
 
     #[test]

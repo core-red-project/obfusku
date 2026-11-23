@@ -48,8 +48,9 @@ just clean         # Clean build artifacts and caches
 | Language Server Protocol implementation | `crates/obfusku-lsp/` |
 | CLI entrypoint, module resolution, REPL | `crates/obfusku-cli/` |
 | Bundled standard library ambient prelude | `crates/obfusku-cli/src/stdlib.obk` |
-| Manifest capabilities and dependencies | `crates/obfusku-cli/src/{manifest,capability,deps}.rs` (`ADR-029`) |
+| Manifest capabilities and dependencies | `crates/obfusku-cli/src/project/{manifest,deps}.rs`, `natives/capability.rs` (`ADR-029`) |
 | Integration tests per crate | `crates/<crate>/tests/` |
+| Built-in exception table (shared by syntax, typecheck, runtime) | `crates/obfusku-core/src/exception.rs` |
 | Executable canonical example suite | `examples/` |
 | Benchmark fixtures | `benches/` |
 | Documentation, architecture, roadmap | `docs/` (`docs/ROADMAP.md`, `ARCHITECTURE.md`) |
@@ -70,6 +71,7 @@ Git hooks: `just install` points `core.hooksPath` at `.githooks/` (pre-commit en
 - **Language Standard**: Rust 2024 edition (`rust-version = "1.93"`), pinned in `rust-toolchain.toml`.
 - **Code Style**: Format with `rustfmt` (`rustfmt.toml`). Maximum line width is 100 characters.
 - **Linting**: Workspace-level `#![deny(warnings)]` via Clippy (`all` and `pedantic` warned). Allowances in `Cargo.toml` (`too_many_lines`, `float_cmp`, `match_same_arms`) are intentional compiler/spec design choices.
+- **Module layout**: one module per file (`foo.rs` + `foo/`, no `mod.rs`), at most 10 files per folder. Every crate sets `#![warn(missing_docs)]`; docs explain the *why*. Unit tests live in-file; integration tests are `tests/<theme>/main.rs` with a `support.rs` and one file per theme, never one monolithic file.
 - **Error Handling**: Use `obfusku_diagnostics::Diagnostic` rather than panics or `unwrap()` in compiler and runtime pipeline stages.
 - **Commits**: Follow Conventional Commits strictly (`feat:`, `fix:`, `docs:`, `style:`, `refactor:`, `test:`, `chore:`, `perf:`).
 - **Changelog**: All notable changes must be documented in [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`.

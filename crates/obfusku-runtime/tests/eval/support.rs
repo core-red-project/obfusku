@@ -9,11 +9,7 @@ pub use obfusku_runtime::{Value, evaluate, evaluate_with_prelude};
 pub use std::rc::Rc;
 
 pub fn sp() -> Span {
-    Span {
-        source: SourceId(0),
-        start: 0,
-        end: 0,
-    }
+    Span::point(SourceId(0), 0)
 }
 
 pub fn var(n: &str) -> Expr {

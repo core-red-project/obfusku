@@ -206,7 +206,11 @@ mod tests {
             span: span(),
         };
         let errors = check(&module(vec![binding("xs", empty)])).expect_err("ambiguous");
-        assert!(errors[0].message.contains("cannot infer a concrete type for 'xs'"));
+        assert!(
+            errors[0]
+                .message
+                .contains("cannot infer a concrete type for 'xs'")
+        );
     }
 
     #[test]

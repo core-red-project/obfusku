@@ -198,13 +198,7 @@ impl Checker {
 
     /// The value is not in its own scope (a `Let` is non-recursive), and
     /// generalizes only if it is a syntactic value (§19.1).
-    fn infer_let(
-        &mut self,
-        name: &str,
-        value: &Expr,
-        body: &Expr,
-        env: &TypeEnv,
-    ) -> Infer<Type> {
+    fn infer_let(&mut self, name: &str, value: &Expr, body: &Expr, env: &TypeEnv) -> Infer<Type> {
         let value_ty = self.infer(value, env)?;
         let scheme = self
             .generalize_value(value, &value_ty, env)
@@ -228,7 +222,9 @@ mod tests {
     }
 
     fn message(result: Infer<Type>) -> String {
-        result.expect_err("expected a type error")[0].message.clone()
+        result.expect_err("expected a type error")[0]
+            .message
+            .clone()
     }
 
     #[test]
@@ -261,12 +257,15 @@ mod tests {
 
     #[test]
     fn an_argument_of_the_wrong_type_names_both_types() {
-        let wants_int = lambda("x", Expr::BinaryOp {
-            op: obfusku_core::ast::BinOp::Mod,
-            lhs: Box::new(var("x")),
-            rhs: Box::new(int(2)),
-            span: span(),
-        });
+        let wants_int = lambda(
+            "x",
+            Expr::BinaryOp {
+                op: obfusku_core::ast::BinOp::Mod,
+                lhs: Box::new(var("x")),
+                rhs: Box::new(int(2)),
+                span: span(),
+            },
+        );
         let text = message(infer(&apply(wants_int, string("no"))));
         assert_eq!(text, "argument type mismatch: expected Int, found String");
     }
@@ -296,7 +295,10 @@ mod tests {
             cell: Box::new(int(0)),
             span: span(),
         };
-        assert_eq!(message(infer(&read)), "cannot read: Int is not a mutable cell");
+        assert_eq!(
+            message(infer(&read)),
+            "cannot read: Int is not a mutable cell"
+        );
     }
 
     #[test]

@@ -76,21 +76,13 @@ pub fn json(map: &SourceMap, ok: bool, diagnostics: &[Diagnostic]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use obfusku_diagnostics::{Severity, Span};
+    use obfusku_diagnostics::Span;
 
     #[test]
     fn json_escapes_and_locates() {
         let mut map = SourceMap::new();
         let id = map.add_file("ab\ncd");
-        let d = Diagnostic {
-            severity: Severity::Error,
-            message: "say \"hi\"\n".to_string(),
-            primary: Span {
-                source: id,
-                start: 4,
-                end: 5,
-            },
-        };
+        let d = Diagnostic::error("say \"hi\"\n", Span::new(id, 4, 5));
         assert_eq!(
             json(&map, false, &[d]),
             "{\"ok\":false,\"diagnostics\":[{\"severity\":\"error\",\

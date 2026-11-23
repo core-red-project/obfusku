@@ -464,11 +464,7 @@ mod tests {
 
     #[test]
     fn span_reads_the_variants_own_span() {
-        let s = Span {
-            source: obfusku_diagnostics::SourceId(0),
-            start: 1,
-            end: 4,
-        };
+        let s = Span::new(obfusku_diagnostics::SourceId(0), 1, 4);
         assert_eq!(Expr::Var("x".into(), s).span(), s);
         assert_eq!(
             Expr::Raise {

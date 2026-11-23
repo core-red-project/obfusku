@@ -248,7 +248,10 @@ mod tests {
         let exception = &registry.adts[EXCEPTION];
         assert!(exception.open);
         assert_eq!(exception.variants.len(), BUILTIN_EXCEPTIONS.len() + 1);
-        assert_eq!(exception.variants.last().map(String::as_str), Some("Timeout"));
+        assert_eq!(
+            exception.variants.last().map(String::as_str),
+            Some("Timeout")
+        );
     }
 
     #[test]

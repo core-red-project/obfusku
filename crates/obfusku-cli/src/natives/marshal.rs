@@ -151,7 +151,7 @@ pub fn unit_arg(op: &str, v: &Value) -> Result<(), Raised> {
 /// The function type `from → to`.
 #[must_use]
 pub fn func(from: Type, to: Type) -> Type {
-    Type::Function(Box::new(from), Box::new(to))
+    Type::function(from, to)
 }
 
 /// `∅ → t`, the shape of every natively-read value.

@@ -278,7 +278,10 @@ mod tests {
             span: span(),
         };
         assert!(is_syntactic_value(&constructor(vec![int(1)])));
-        assert!(!is_syntactic_value(&constructor(vec![apply(var("f"), int(1))])));
+        assert!(!is_syntactic_value(&constructor(vec![apply(
+            var("f"),
+            int(1)
+        )])));
     }
 
     #[test]

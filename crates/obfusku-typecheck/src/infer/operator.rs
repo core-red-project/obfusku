@@ -179,8 +179,14 @@ mod tests {
     #[test]
     fn addition_accepts_int_real_and_str_of_one_kind() {
         assert_eq!(infer(&binary(BinOp::Add, int(1), int(2))), Ok(Type::Int));
-        assert_eq!(infer(&binary(BinOp::Add, real(1.0), real(2.0))), Ok(Type::Real));
-        assert_eq!(infer(&binary(BinOp::Add, string("a"), string("b"))), Ok(Type::Str));
+        assert_eq!(
+            infer(&binary(BinOp::Add, real(1.0), real(2.0))),
+            Ok(Type::Real)
+        );
+        assert_eq!(
+            infer(&binary(BinOp::Add, string("a"), string("b"))),
+            Ok(Type::Str)
+        );
     }
 
     #[test]

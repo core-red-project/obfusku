@@ -9,6 +9,18 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Every crate is documented to `missing_docs` level and reorganized into one module per file, with at most 10 files per folder; large test files are split into themed `tests/<theme>/` directories.
+- `obfusku-core` gains `exception::BUILTIN_EXCEPTIONS`, the single table of built-in `Exception` variants; syntax, typecheck and runtime derive from it instead of keeping copies.
+- `obfusku-runtime` exports `PVec`, `PMap` and `Text` from the crate root; the `pvec`, `pmap` and `text` module paths are gone.
+- `obfusku-fmt` no longer depends on `obfusku-diagnostics` at runtime; `obfusku-lsp` drops its direct core, syntax and typecheck dependencies.
+- Diagnostics and spans are built with `Diagnostic::{error, warning, note}`, `Span::new` and `Span::point` instead of struct literals.
+- `obfusku-syntax`: sibling sub-pattern errors in a constructor pattern are all reported, and a local function with a repeated name restores mutability correctly.
+- `obfusku-typecheck`: a function-typed parameter prints with parentheses in diagnostics (`(Int → Int) → Bool`), a local `LetRec` reports every failing member, and reading or rebinding a cell of unknown type now detects infinite types. A `Match` with no arms is an error rather than a panic.
+- `obfusku-runtime`: an out-of-range index error records its source position.
+- `line_col` no longer panics on an offset inside a multi-byte glyph.
+
 ## [1.1.0] — 2026-10-15
 
 This release turns Obfusku from a minimal core into a language that can host real tools: a numeric and text library, bytes, records, persistent collections, a host I/O family, standalone executables, a resolved runtime and call traces. Each decision has an ADR (`ADR-022` … `ADR-028`).

@@ -5,16 +5,12 @@
 //! failure renders alike and the span-less convention (`Span::default()`)
 //! lives in one place.
 
-use obfusku_diagnostics::{Diagnostic, Severity, Span};
+use obfusku_diagnostics::{Diagnostic, Span};
 use std::path::Path;
 
 /// An error diagnostic with no source location.
 pub(crate) fn host_error(message: impl Into<String>) -> Diagnostic {
-    Diagnostic {
-        severity: Severity::Error,
-        message: message.into(),
-        primary: Span::default(),
-    }
+    Diagnostic::error(message, Span::default())
 }
 
 /// `could not read '<path>': <cause>` — the one phrasing every read

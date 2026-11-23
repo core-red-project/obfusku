@@ -101,13 +101,12 @@ impl Checker {
         free_params(declared, &mut free);
         let mut fresh_map = HashMap::new();
         for name in free {
-            let var = match self.lambda_param_vars.get(&name) {
-                Some(existing) => existing.clone(),
-                None => {
-                    let var = self.fresh();
-                    self.lambda_param_vars.insert(name.clone(), var.clone());
-                    var
-                }
+            let var = if let Some(existing) = self.lambda_param_vars.get(&name) {
+                existing.clone()
+            } else {
+                let var = self.fresh();
+                self.lambda_param_vars.insert(name.clone(), var.clone());
+                var
             };
             fresh_map.insert(name, var);
         }
@@ -140,7 +139,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "unbound type parameter 't'")]
     fn an_unmapped_param_is_an_internal_error() {
-        instantiate_core_type(&param("t"), &HashMap::new());
+        let _ = instantiate_core_type(&param("t"), &HashMap::new());
     }
 
     #[test]
@@ -183,9 +182,15 @@ mod tests {
     #[test]
     fn lambda_annotations_share_a_variable_by_name() {
         let mut c = checker();
-        let a = c.instantiate_lambda_annotation(&param("t"), span()).expect("ok");
-        let b = c.instantiate_lambda_annotation(&param("t"), span()).expect("ok");
-        let other = c.instantiate_lambda_annotation(&param("u"), span()).expect("ok");
+        let a = c
+            .instantiate_lambda_annotation(&param("t"), span())
+            .expect("ok");
+        let b = c
+            .instantiate_lambda_annotation(&param("t"), span())
+            .expect("ok");
+        let other = c
+            .instantiate_lambda_annotation(&param("u"), span())
+            .expect("ok");
         assert_eq!(a, b);
         assert_ne!(a, other);
     }

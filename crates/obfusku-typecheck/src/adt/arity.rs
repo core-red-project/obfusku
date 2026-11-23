@@ -117,7 +117,11 @@ mod tests {
             &mut errors,
         );
         assert_eq!(errors.len(), 1);
-        assert!(errors[0].message.contains("expects 1 type argument(s), found 0"));
+        assert!(
+            errors[0]
+                .message
+                .contains("expects 1 type argument(s), found 0")
+        );
     }
 
     #[test]

@@ -100,7 +100,11 @@ fn record<'a>(
 }
 
 fn into_result(errors: Vec<Diagnostic>) -> Result<(), Vec<Diagnostic>> {
-    if errors.is_empty() { Ok(()) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 #[cfg(test)]
@@ -196,9 +200,15 @@ mod tests {
 
     #[test]
     fn exception_may_be_extended_but_not_its_variants_redeclared() {
-        let extend = [decl("Exception", &["Timeout"], 0), decl("Exception", &["Disk"], 5)];
+        let extend = [
+            decl("Exception", &["Timeout"], 0),
+            decl("Exception", &["Disk"], 5),
+        ];
         assert!(reject_type_clashes(&extend).is_ok());
-        let clash = [decl("Exception", &["Timeout"], 0), decl("Exception", &["Timeout"], 5)];
+        let clash = [
+            decl("Exception", &["Timeout"], 0),
+            decl("Exception", &["Timeout"], 5),
+        ];
         assert!(reject_type_clashes(&clash).is_err());
     }
 }

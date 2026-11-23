@@ -151,11 +151,7 @@ mod tests {
 
     #[test]
     fn span_is_the_whole_patterns() {
-        let s = Span {
-            source: obfusku_diagnostics::SourceId(0),
-            start: 3,
-            end: 9,
-        };
+        let s = Span::new(obfusku_diagnostics::SourceId(0), 3, 9);
         assert_eq!(ctor_at("P", s).span(), s);
     }
 

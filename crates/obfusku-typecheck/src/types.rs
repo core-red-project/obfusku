@@ -131,9 +131,7 @@ impl Type {
             Type::Cell(inner) => Core::cell(inner.to_core()?),
             Type::Adt(name, args) => Core::Adt(
                 name.clone(),
-                args.iter()
-                    .map(Type::to_core)
-                    .collect::<Option<Vec<_>>>()?,
+                args.iter().map(Type::to_core).collect::<Option<Vec<_>>>()?,
             ),
             Type::Var(_) => return None,
         })

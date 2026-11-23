@@ -9,7 +9,7 @@ use super::deps::{AUXILIARY_DIRS, Packages};
 use super::search::{ModuleSearch, find_module_skipping};
 use crate::project::exports::{export_types, export_values};
 use crate::report::host_error::host_error;
-use obfusku_diagnostics::{Diagnostic, Severity, SourceMap, Span};
+use obfusku_diagnostics::{Diagnostic, SourceMap, Span};
 use obfusku_runtime::Value;
 use obfusku_syntax::ast::Declaration;
 use obfusku_typecheck::Prelude;
@@ -124,11 +124,7 @@ pub struct ResolvedModule {
 
 /// An error anchored at the import that caused it.
 fn error_at(span: Span, message: String) -> Diagnostic {
-    Diagnostic {
-        severity: Severity::Error,
-        message,
-        primary: span,
-    }
+    Diagnostic::error(message, span)
 }
 
 fn io_error(path: &Path, e: &std::io::Error) -> Diagnostic {

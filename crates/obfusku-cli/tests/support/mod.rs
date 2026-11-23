@@ -46,6 +46,15 @@ pub fn write_temp(source: &str) -> TempObkFile {
     TempObkFile::new(source)
 }
 
+/// A new, empty, process-unique directory under the system temp dir.
+fn fresh_dir(prefix: &str) -> std::path::PathBuf {
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("{prefix}-{}-{n}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    dir
+}
+
 /// A directory of named `.obk` files, for import-resolution tests —
 /// `⟲ mathutil` must resolve to a real `mathutil.obk` sitting next to
 /// the importing file, not an arbitrary temp filename.
@@ -53,12 +62,7 @@ pub struct TempObkDir(pub std::path::PathBuf);
 
 impl TempObkDir {
     pub fn new() -> Self {
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("obfusku-cli-test-dir-{}-{n}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create temp dir");
-        TempObkDir(dir)
+        TempObkDir(fresh_dir("obfusku-cli-test-dir"))
     }
 
     pub fn write(&self, name: &str, source: &str) -> std::path::PathBuf {
@@ -81,12 +85,7 @@ pub struct TempTree(pub std::path::PathBuf);
 
 impl TempTree {
     pub fn new() -> Self {
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("obfusku-project-test-{}-{n}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create temp tree root");
-        TempTree(dir)
+        TempTree(fresh_dir("obfusku-project-test"))
     }
 
     pub fn root(&self) -> &std::path::Path {
