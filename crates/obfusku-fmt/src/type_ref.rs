@@ -36,8 +36,8 @@ impl Printer {
         self.separated(types, ", ", Printer::type_ref);
     }
 
-    fn type_group_if(&mut self, group: bool, ty: &TypeRef) {
-        if group {
+    fn type_group_if(&mut self, should_group: bool, ty: &TypeRef) {
+        if should_group {
             self.parenthesized(|p| p.type_ref(ty));
         } else {
             self.type_ref(ty);

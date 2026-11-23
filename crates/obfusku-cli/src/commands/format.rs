@@ -6,9 +6,9 @@ use std::process::ExitCode;
 /// `fmt [--check] <file|project>`: prints the canonical form. With
 /// `--check` it prints nothing and exits `1` when the file differs from it,
 /// for use in CI and hooks.
-pub(super) fn print(source: &str, check: bool) -> ExitCode {
+pub(super) fn print(source: &str, is_check: bool) -> ExitCode {
     match fmt_source(source) {
-        Ok(formatted) if check => {
+        Ok(formatted) if is_check => {
             if formatted == source {
                 ExitCode::SUCCESS
             } else {

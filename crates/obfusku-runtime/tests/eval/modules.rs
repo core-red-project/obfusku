@@ -34,14 +34,14 @@ fn evaluate_with_prelude_returns_every_top_level_binding_with_its_export_flag() 
             obfusku_core::ast::BindingGroup::Let(obfusku_core::ast::Binding {
                 name: "priv".to_string(),
                 value: int(1),
-                exported: false,
+                is_exported: false,
                 span: sp(),
                 declared_type: None,
             }),
             obfusku_core::ast::BindingGroup::Let(obfusku_core::ast::Binding {
                 name: "pub_".to_string(),
                 value: int(2),
-                exported: true,
+                is_exported: true,
                 span: sp(),
                 declared_type: None,
             }),

@@ -50,7 +50,7 @@ fn explicit_ref_alias_round_trips_to_an_identical_ast_not_just_an_identical_valu
         unreachable!()
     };
     assert!(
-        !alias_decl.mutable,
+        !alias_decl.is_mutable,
         "alias must stay immutable: {formatted}"
     );
     assert!(

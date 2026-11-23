@@ -33,7 +33,7 @@ pub(super) fn constructor_binding(tag: &str, arity: usize, span: Span) -> Bindin
     Binding {
         name: tag.to_string(),
         value,
-        exported: true,
+        is_exported: true,
         span,
         declared_type: None,
     }
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn constructors_are_exported_and_unannotated() {
         let b = constructor_binding("T", 1, at());
-        assert!(b.exported);
+        assert!(b.is_exported);
         assert!(b.declared_type.is_none());
         assert_eq!(b.name, "T");
     }

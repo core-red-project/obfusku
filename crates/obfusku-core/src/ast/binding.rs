@@ -13,7 +13,7 @@ pub struct Binding {
     /// The bound value.
     pub value: Expr,
     /// Whether importers can see it (`ADR-005`, `SEMANTIC_CORE.md` §20).
-    pub exported: bool,
+    pub is_exported: bool,
     /// The whole binding.
     pub span: Span,
     /// The surface type annotation, if any. A `FunctionDeclaration`'s
@@ -85,7 +85,7 @@ impl Module {
     /// The names this module exports.
     pub fn exported_names(&self) -> impl Iterator<Item = &str> {
         self.all_bindings()
-            .filter(|b| b.exported)
+            .filter(|b| b.is_exported)
             .map(|b| b.name.as_str())
     }
 }
@@ -95,11 +95,11 @@ mod tests {
     use super::*;
     use crate::ast::literal::Literal;
 
-    fn binding(name: &str, exported: bool) -> Binding {
+    fn binding(name: &str, is_exported: bool) -> Binding {
         Binding {
             name: name.to_string(),
             value: Expr::Lit(Literal::Unit, Span::default()),
-            exported,
+            is_exported,
             span: Span::default(),
             declared_type: None,
         }

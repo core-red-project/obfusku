@@ -50,15 +50,15 @@ pub fn load() -> (Prelude, HashMap<String, Value>) {
         3,
         Rc::new(|a| {
             let (start, len) = (int_arg("⌭⌷", &a[0])?, int_arg("⌭⌷", &a[1])?);
-            let data = bytes_arg("⌭⌷", &a[2])?;
+            let payload = bytes_arg("⌭⌷", &a[2])?;
             if start < 0 || len < 0 {
                 return Err(invalid(format!(
                     "'⌭⌷' expects non-negative start and length, found {start}, {len}"
                 )));
             }
-            let from = (start as usize).min(data.len());
-            let to = from.saturating_add(len as usize).min(data.len());
-            Ok(bytes(data[from..to].to_vec()))
+            let from = (start as usize).min(payload.len());
+            let to = from.saturating_add(len as usize).min(payload.len());
+            Ok(bytes(payload[from..to].to_vec()))
         }),
     );
     add(
@@ -85,12 +85,12 @@ pub fn load() -> (Prelude, HashMap<String, Value>) {
         func(b(), func(Type::Int, optional_of(Type::Int))),
         2,
         Rc::new(|a| {
-            let data = bytes_arg("⌭⌕", &a[0])?;
+            let payload = bytes_arg("⌭⌕", &a[0])?;
             let i = int_arg("⌭⌕", &a[1])?;
             Ok(optional(
                 usize::try_from(i)
                     .ok()
-                    .and_then(|i| data.get(i))
+                    .and_then(|i| payload.get(i))
                     .map(|b| Value::Int(i64::from(*b))),
             ))
         }),

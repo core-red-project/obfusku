@@ -33,9 +33,9 @@ fn apply(func: core::Expr, arg: core::Expr, span: Span) -> core::Expr {
     }
 }
 
-fn bool_arm(value: bool, result: core::Expr, span: Span) -> core::MatchArm {
+fn bool_arm(is_true: bool, result: core::Expr, span: Span) -> core::MatchArm {
     core::MatchArm {
-        pattern: core::Pattern::Lit(Literal::Bool(value), span),
+        pattern: core::Pattern::Lit(Literal::Bool(is_true), span),
         result: Rc::new(result),
         span,
     }
@@ -469,7 +469,7 @@ impl Lowerer {
         pipe_ref: Option<&str>,
     ) -> Lowered<core::Expr> {
         let value = self.lower_expr(&decl.value, pipe_ref)?;
-        Ok(if decl.mutable {
+        Ok(if decl.is_mutable {
             core::Expr::MutCell {
                 initial: Box::new(value),
                 span: decl.span,
@@ -506,12 +506,12 @@ impl Lowerer {
     pub(super) fn lower_function_binding(
         &mut self,
         function: &FunctionDeclaration,
-        exported: bool,
+        is_exported: bool,
     ) -> Lowered<core::Binding> {
         Ok(core::Binding {
             name: function.name.clone(),
             value: self.lower_function_declaration(function)?,
-            exported,
+            is_exported,
             span: function.span,
             declared_type: Some(declared_function_type(function)),
         })
@@ -527,7 +527,7 @@ impl Lowerer {
         span: Span,
     ) -> Lowered<core::Expr> {
         let value = self.lower_binding_value(decl, pipe_ref);
-        let body = self.with_mutability([(decl.name.clone(), decl.mutable)], |l| {
+        let body = self.with_mutability([(decl.name.clone(), decl.is_mutable)], |l| {
             l.lower_expr(body, pipe_ref)
         });
         let (value, body) = both(value, body)?;
@@ -770,7 +770,7 @@ mod tests {
         assert!(
             bindings
                 .iter()
-                .all(|b| !b.exported && b.declared_type.is_some())
+                .all(|b| !b.is_exported && b.declared_type.is_some())
         );
     }
 

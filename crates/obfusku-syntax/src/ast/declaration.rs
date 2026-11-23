@@ -77,9 +77,9 @@ pub struct ValueDeclaration {
     /// the type is inferred.
     pub ty: Option<TypeRef>,
     /// `˚`: the binding is a mutable cell.
-    pub mutable: bool,
+    pub is_mutable: bool,
     /// `⟳`: visible to importers.
-    pub exported: bool,
+    pub is_exported: bool,
     /// The bound expression.
     pub value: Expression,
     /// The whole declaration.
@@ -103,7 +103,7 @@ pub struct FunctionDeclaration {
     /// The declared result type.
     pub return_type: TypeRef,
     /// `→⟳`: visible to importers. Rejected on a local function.
-    pub exported: bool,
+    pub is_exported: bool,
     /// The body.
     pub body: Expression,
     /// The whole declaration.

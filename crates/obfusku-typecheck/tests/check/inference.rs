@@ -9,14 +9,14 @@ fn duplicate_top_level_binding_reports_a_separate_note_at_the_first_occurrence()
     let first = Binding {
         name: "x".to_string(),
         value: int(1),
-        exported: false,
+        is_exported: false,
         span: first_span,
         declared_type: None,
     };
     let second = Binding {
         name: "x".to_string(),
         value: int(2),
-        exported: false,
+        is_exported: false,
         span: second_span,
         declared_type: None,
     };
@@ -351,7 +351,7 @@ fn type_error_carries_the_source_span_from_the_core_expression() {
     let bindings = vec![Binding {
         name: "y".to_string(),
         value: Expr::Var("missing".to_string(), bad_span),
-        exported: false,
+        is_exported: false,
         span: sp(),
         declared_type: None,
     }];
@@ -474,7 +474,7 @@ fn letrec_declared_type_is_unified_before_the_body_is_inferred() {
     let contradicting = Binding {
         name: "f".to_string(),
         value: lambda("x", string("not an int")),
-        exported: false,
+        is_exported: false,
         span: sp(),
         declared_type: Some(CoreType::Function(
             Box::new(CoreType::Int),

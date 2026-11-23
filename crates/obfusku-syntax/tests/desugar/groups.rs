@@ -26,7 +26,7 @@ fn exported_function_declaration_carries_exported_true_into_its_letrec_binding()
     match &user_groups(&module)[0] {
         obfusku_core::ast::BindingGroup::LetRec(members) => {
             assert_eq!(members.len(), 1);
-            assert!(members[0].exported);
+            assert!(members[0].is_exported);
         }
         other => panic!("expected a LetRec group, got {other:?}"),
     }
@@ -38,7 +38,7 @@ fn non_exported_function_declaration_carries_exported_false_into_its_letrec_bind
     match &user_groups(&module)[0] {
         obfusku_core::ast::BindingGroup::LetRec(members) => {
             assert_eq!(members.len(), 1);
-            assert!(!members[0].exported);
+            assert!(!members[0].is_exported);
         }
         other => panic!("expected a LetRec group, got {other:?}"),
     }

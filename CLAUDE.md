@@ -53,7 +53,7 @@ just clean         # Clean build artifacts and caches
 | Built-in exception table (shared by syntax, typecheck, runtime) | `crates/obfusku-core/src/exception.rs` |
 | Executable canonical example suite | `examples/` |
 | Benchmark fixtures | `benches/` |
-| Documentation, architecture, roadmap | `docs/` |
+| Documentation, architecture, roadmap | `docs/` (`docs/glossary.md`, `docs/diagnostics.md`, `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`) |
 | Visual assets and banners | `docs/assets/` |
 | Git hooks and validation scripts | `.githooks/`, `scripts/` |
 | Continuous Integration workflows | `.github/workflows/` |

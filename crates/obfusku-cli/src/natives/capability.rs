@@ -55,13 +55,13 @@ const EXIT: &[&str] = &["⌁↯"];
 #[must_use]
 pub fn denied(caps: &Capabilities) -> HashMap<&'static str, &'static str> {
     let families: [(&'static str, bool, &[&'static str]); 7] = [
-        ("console", caps.console, CONSOLE),
+        ("console", caps.has_console, CONSOLE),
         ("fs", caps.fs != FsAccess::None, FS),
-        ("env", caps.env, ENV),
-        ("args", caps.args, ARGS),
-        ("clock", caps.clock, CLOCK),
-        ("random", caps.random, RANDOM),
-        ("exit", caps.exit, EXIT),
+        ("env", caps.has_env, ENV),
+        ("args", caps.has_args, ARGS),
+        ("clock", caps.has_clock, CLOCK),
+        ("random", caps.has_random, RANDOM),
+        ("exit", caps.has_exit, EXIT),
     ];
     let mut out = HashMap::new();
     for (family, allowed, names) in families {
@@ -148,10 +148,10 @@ mod tests {
 
     #[test]
     fn each_denied_family_gates_its_natives() {
-        let d = denied(&caps(|c| c.env = false));
+        let d = denied(&caps(|c| c.has_env = false));
         assert_eq!(d.get("⌁↓⎈"), Some(&"env"));
         assert_eq!(d.len(), 1);
-        let d = denied(&caps(|c| c.exit = false));
+        let d = denied(&caps(|c| c.has_exit = false));
         assert_eq!(d.get("⌁↯"), Some(&"exit"));
         let d = denied(&caps(|c| c.fs = FsAccess::None));
         assert!(d.keys().all(|k| FS.contains(k)) && d.len() == FS.len());

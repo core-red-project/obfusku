@@ -39,11 +39,11 @@ pub(crate) fn scheme_of(ty: &TypeResult) -> Scheme {
 /// Type schemes of `typed`'s bindings. With `only_exported`, a binding must
 /// carry the `⟳` mark (`ADR-005`); the stdlib and the REPL expose every
 /// binding because there is nothing else to keep private from.
-pub(crate) fn export_types(typed: &TypedModule, only_exported: bool) -> Prelude {
+pub(crate) fn export_types(typed: &TypedModule, is_only_exported: bool) -> Prelude {
     typed
         .bindings
         .iter()
-        .filter(|b| (b.exported || !only_exported) && !is_builtin(&b.name))
+        .filter(|b| (b.is_exported || !is_only_exported) && !is_builtin(&b.name))
         .map(|b| (b.name.clone(), scheme_of(&b.ty)))
         .collect()
 }
@@ -51,11 +51,11 @@ pub(crate) fn export_types(typed: &TypedModule, only_exported: bool) -> Prelude 
 /// Values of an evaluated module, selected like [`export_types`].
 pub(crate) fn export_values(
     evaluated: Vec<(String, bool, Value)>,
-    only_exported: bool,
+    is_only_exported: bool,
 ) -> HashMap<String, Value> {
     evaluated
         .into_iter()
-        .filter(|(name, exported, _)| (*exported || !only_exported) && !is_builtin(name))
+        .filter(|(name, exported, _)| (*exported || !is_only_exported) && !is_builtin(name))
         .map(|(name, _, value)| (name, value))
         .collect()
 }

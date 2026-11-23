@@ -16,8 +16,8 @@ fn one_binding_with_an_int_literal() {
         panic!("expected a Value declaration")
     };
     assert_eq!(decl.name, "x");
-    assert!(!decl.mutable);
-    assert!(!decl.exported);
+    assert!(!decl.is_mutable);
+    assert!(!decl.is_exported);
     assert!(matches!(decl.value, Expression::Int(5, _)));
 }
 
@@ -65,7 +65,7 @@ fn mutable_and_export_modifiers_compose() {
             let Declaration::Value(d) = decl else {
                 panic!("expected a Value declaration")
             };
-            (d.mutable, d.exported)
+            (d.is_mutable, d.is_exported)
         })
         .collect();
     assert_eq!(

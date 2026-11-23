@@ -36,8 +36,8 @@ fn value_declaration_annotation_composes_with_mutability_and_export() {
         panic!("expected a Value declaration")
     };
     assert!(vd.ty.is_some());
-    assert!(vd.mutable);
-    assert!(vd.exported);
+    assert!(vd.is_mutable);
+    assert!(vd.is_exported);
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn function_declaration_accepts_export_after_return_arrow() {
     let Declaration::Function(fd) = &module.declarations[0] else {
         panic!("expected a Function declaration")
     };
-    assert!(fd.exported);
+    assert!(fd.is_exported);
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn function_declaration_without_export_defaults_to_not_exported() {
     let Declaration::Function(fd) = &module.declarations[0] else {
         panic!("expected a Function declaration")
     };
-    assert!(!fd.exported);
+    assert!(!fd.is_exported);
 }
 
 #[test]

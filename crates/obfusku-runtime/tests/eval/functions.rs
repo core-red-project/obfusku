@@ -48,7 +48,7 @@ fn calling_a_non_function_value_is_a_runtime_error() {
             obfusku_core::ast::Binding {
                 name: "bad".to_string(),
                 value: apply(int(5), int(1)),
-                exported: false,
+                is_exported: false,
                 span: sp(),
                 declared_type: None,
             },

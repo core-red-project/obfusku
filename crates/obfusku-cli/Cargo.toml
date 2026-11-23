@@ -22,7 +22,7 @@ obfusku-typecheck = { version = "1.1.0", path = "../obfusku-typecheck" }
 obfusku-syntax = { version = "1.1.0", path = "../obfusku-syntax" }
 obfusku-runtime = { version = "1.1.0", path = "../obfusku-runtime" }
 obfusku-fmt = { version = "1.1.0", path = "../obfusku-fmt" }
-toml = { version = "0.8", default-features = false, features = ["parse"] }
+toml = { version = "1.2", default-features = false, features = ["parse", "serde", "std"] }
 unicode-segmentation = "1"
 
 [lints]

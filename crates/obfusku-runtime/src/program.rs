@@ -116,7 +116,7 @@ fn run_module(
                     GlobalCell::new(&binding.name, Some(value.clone())),
                 );
                 last = value.clone();
-                all.push((binding.name.clone(), binding.exported, value));
+                all.push((binding.name.clone(), binding.is_exported, value));
             }
             BindingGroup::LetRec(members) => {
                 let cells: Vec<_> = members
@@ -131,7 +131,7 @@ fn run_module(
                     let value = evaluate_binding(&mut globals, &root, binding)?;
                     *cell.value.borrow_mut() = Some(value.clone());
                     last = value.clone();
-                    all.push((binding.name.clone(), binding.exported, value));
+                    all.push((binding.name.clone(), binding.is_exported, value));
                 }
             }
         }

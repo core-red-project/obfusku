@@ -50,7 +50,7 @@ fn constructor_field_type_mismatch_is_rejected() {
             }),
             span: sp(),
         },
-        exported: true,
+        is_exported: true,
         span: sp(),
         declared_type: None,
     };

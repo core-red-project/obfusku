@@ -14,7 +14,7 @@
 //! | `annotation` | turning a written type into checker types |
 //! | `expression` | the typing rule of each core form |
 //! | `group` | mutually recursive `LetRec` groups |
-//! | `data` | constructors, arrays, record fields |
+//! | `constructors` | constructors, arrays, record fields |
 //! | `operator` | the closed operator table (§20.2) |
 //! | `matching` | match typing and unreachable-arm detection |
 //! | `exhaustive` | match exhaustiveness (§17) |
@@ -24,7 +24,7 @@
 //! problems from one form.
 
 mod annotation;
-mod data;
+mod constructors;
 mod exhaustive;
 mod expression;
 mod group;
@@ -133,8 +133,8 @@ mod testing {
         Expr::Lit(Literal::Int(value), span())
     }
 
-    pub(super) fn boolean(value: bool) -> Expr {
-        Expr::Lit(Literal::Bool(value), span())
+    pub(super) fn boolean(is_true: bool) -> Expr {
+        Expr::Lit(Literal::Bool(is_true), span())
     }
 
     pub(super) fn string(value: &str) -> Expr {

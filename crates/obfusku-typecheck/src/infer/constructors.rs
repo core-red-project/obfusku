@@ -31,18 +31,22 @@ impl Checker {
     /// Looks `tag` up and instantiates its type parameters, or `None` if no
     /// such constructor is declared.
     pub(super) fn instantiate_variant(&mut self, tag: &str) -> Option<VariantInstance> {
-        let info = self.adt_registry.variants.get(tag)?.clone();
-        let params: HashMap<String, Type> = info
+        let variant_meta = self.adt_registry.variants.get(tag)?.clone();
+        let params: HashMap<String, Type> = variant_meta
             .type_params
             .iter()
             .map(|p| (p.clone(), self.fresh()))
             .collect();
         let adt_ty = Type::Adt(
-            info.adt_name.clone(),
-            info.type_params.iter().map(|p| params[p].clone()).collect(),
+            variant_meta.adt_name.clone(),
+            variant_meta
+                .type_params
+                .iter()
+                .map(|p| params[p].clone())
+                .collect(),
         );
         Some(VariantInstance {
-            info,
+            info: variant_meta,
             params,
             adt_ty,
         })
@@ -200,8 +204,9 @@ impl Checker {
 
     /// The constructor of type `adt` that declares field `name`.
     fn owner_within(&self, adt: &str, name: &str) -> Option<String> {
-        let info = self.adt_registry.adts.get(adt)?;
-        info.variants
+        let adt_meta = self.adt_registry.adts.get(adt)?;
+        adt_meta
+            .variants
             .iter()
             .find(|tag| {
                 self.adt_registry

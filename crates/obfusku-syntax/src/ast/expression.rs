@@ -76,7 +76,7 @@ pub enum Expression {
         /// The new contents.
         value: Box<Expression>,
         /// Whether `˚` was written.
-        explicit: bool,
+        is_explicit: bool,
         /// The whole rebind.
         span: Span,
     },
@@ -455,8 +455,8 @@ mod tests {
             name: "x".into(),
             name_span: at(0),
             ty: None,
-            mutable: false,
-            exported: false,
+            is_mutable: false,
+            is_exported: false,
             value: int(1),
             span: at(0),
         };

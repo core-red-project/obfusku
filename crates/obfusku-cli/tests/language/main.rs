@@ -2,8 +2,8 @@
 
 mod support;
 
+mod algebraic;
 mod collections;
-mod data;
 mod diagnostics;
 mod numbers_text;
 mod operators;

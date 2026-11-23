@@ -58,10 +58,10 @@ impl Printer {
             Expression::Rebind {
                 name,
                 value,
-                explicit,
+                is_explicit,
                 ..
             } => {
-                if *explicit {
+                if *is_explicit {
                     self.push(MUTABLE);
                 }
                 self.push_str(name);
@@ -121,8 +121,8 @@ impl Printer {
         }
     }
 
-    fn parenthesized_if(&mut self, condition: bool, inner: impl FnOnce(&mut Self)) {
-        if condition {
+    fn parenthesized_if(&mut self, should_parenthesize: bool, inner: impl FnOnce(&mut Self)) {
+        if should_parenthesize {
             self.parenthesized(inner);
         } else {
             inner(self);

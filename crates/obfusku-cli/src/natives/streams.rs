@@ -116,9 +116,9 @@ pub fn load() -> Natives {
         func(bytes_type(), Type::Unit),
         1,
         Rc::new(|a| {
-            let data = bytes_arg("⌁↑⎚", &a[0])?;
+            let payload = bytes_arg("⌁↑⎚", &a[0])?;
             let mut out = std::io::stdout().lock();
-            out.write_all(data)
+            out.write_all(payload)
                 .and_then(|()| out.flush())
                 .map_err(|e| io_fail("writeBytes", &e))?;
             Ok(Value::Unit)
@@ -129,12 +129,12 @@ pub fn load() -> Natives {
         unit_to(bytes_type()),
         1,
         Rc::new(|_| {
-            let mut data = Vec::new();
+            let mut buffer = Vec::new();
             std::io::stdin()
                 .lock()
-                .read_to_end(&mut data)
+                .read_to_end(&mut buffer)
                 .map_err(|e| io_fail("readAllBytes", &e))?;
-            Ok(Value::Bytes(Rc::from(data)))
+            Ok(Value::Bytes(Rc::from(buffer)))
         }),
     );
     r.add_mono(

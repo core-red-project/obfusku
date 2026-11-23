@@ -31,7 +31,7 @@ pub(crate) struct AdtInfo {
     /// An open type can gain variants in modules this one never sees, so a
     /// match over it is exhaustive only with a wildcard or variable arm
     /// (`Exception`, `ADR-026`).
-    pub(crate) open: bool,
+    pub(crate) is_open: bool,
 }
 
 /// One constructor: the type it builds and the shape of its fields.
@@ -87,7 +87,7 @@ impl AdtRegistry {
             AdtInfo {
                 variants: tags,
                 type_params: Vec::new(),
-                open: true,
+                is_open: true,
             },
         );
         for (tag, arity) in BUILTIN_EXCEPTIONS {
@@ -109,7 +109,7 @@ impl AdtRegistry {
                 AdtInfo {
                     variants: Vec::new(),
                     type_params: params.iter().map(|p| (*p).to_string()).collect(),
-                    open: false,
+                    is_open: false,
                 },
             );
         }
@@ -120,17 +120,17 @@ impl AdtRegistry {
     /// built-in type (`ADR-026`); any other name introduces a new one.
     fn declare(&mut self, type_decls: &[TypeDecl]) {
         for decl in type_decls {
-            let info = self
+            let adt_meta = self
                 .adts
                 .entry(decl.tag.clone())
                 .or_insert_with(|| AdtInfo {
                     variants: Vec::new(),
                     type_params: decl.type_params.clone(),
-                    open: false,
+                    is_open: false,
                 });
             for variant in &decl.variants {
-                if !info.variants.contains(&variant.tag) {
-                    info.variants.push(variant.tag.clone());
+                if !adt_meta.variants.contains(&variant.tag) {
+                    adt_meta.variants.push(variant.tag.clone());
                 }
                 self.variants.insert(
                     variant.tag.clone(),
@@ -202,9 +202,9 @@ mod tests {
     fn every_builtin_exception_is_registered_with_text_payloads() {
         let registry = AdtRegistry::build(&[]).expect("no declarations to reject");
         for (tag, arity) in BUILTIN_EXCEPTIONS {
-            let info = &registry.variants[tag];
-            assert_eq!(info.adt_name, EXCEPTION);
-            assert_eq!(info.field_types, vec![CoreType::Str; arity]);
+            let variant_meta = &registry.variants[tag];
+            assert_eq!(variant_meta.adt_name, EXCEPTION);
+            assert_eq!(variant_meta.field_types, vec![CoreType::Str; arity]);
         }
     }
 
@@ -212,7 +212,7 @@ mod tests {
     fn exception_is_open_and_lists_its_variants_in_table_order() {
         let registry = AdtRegistry::build(&[]).expect("builds");
         let exception = &registry.adts[EXCEPTION];
-        assert!(exception.open);
+        assert!(exception.is_open);
         let tags: Vec<&str> = BUILTIN_EXCEPTIONS.iter().map(|(t, _)| *t).collect();
         assert_eq!(exception.variants, tags);
     }
@@ -246,7 +246,7 @@ mod tests {
         let extra = decl("Exception", &[], vec![variant("Timeout", vec![])]);
         let registry = AdtRegistry::build(&[extra]).expect("builds");
         let exception = &registry.adts[EXCEPTION];
-        assert!(exception.open);
+        assert!(exception.is_open);
         assert_eq!(exception.variants.len(), BUILTIN_EXCEPTIONS.len() + 1);
         assert_eq!(
             exception.variants.last().map(String::as_str),

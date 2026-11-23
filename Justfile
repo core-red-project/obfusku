@@ -19,6 +19,7 @@ build:
     cargo build --workspace --locked
 
 # Run complete test suite across all workspace crates
+# coverage-threshold: 90
 test:
     cargo test --workspace --locked
 
@@ -51,8 +52,12 @@ format:
 format-check:
     cargo fmt --all --check
 
+# Lint GitHub Actions workflows
+lint-workflows:
+    @command -v actionlint >/dev/null && actionlint .github/workflows/*.yml || true
+
 # Run the complete quality gate (non-mutating)
-check: format-check lint lint-shell typecheck test deny
+check: format-check lint lint-shell lint-workflows typecheck test deny
 
 # Remove build artifacts and caches
 clean:

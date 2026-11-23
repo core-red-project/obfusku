@@ -39,13 +39,13 @@ impl Printer {
             self.type_ref(ty);
         }
         self.spaced(BIND);
-        if declaration.mutable {
+        if declaration.is_mutable {
             self.push(MUTABLE);
         }
-        if declaration.exported {
+        if declaration.is_exported {
             self.push(EXPORT);
         }
-        if !declaration.mutable && starts_with_mutability_glyph(&declaration.value) {
+        if !declaration.is_mutable && starts_with_mutability_glyph(&declaration.value) {
             self.parenthesized(|p| p.expression(&declaration.value, Prec::BOTTOM));
         } else {
             self.expression(&declaration.value, Prec::BOTTOM);
@@ -62,7 +62,7 @@ impl Printer {
         self.type_ref(&declaration.return_type);
         self.push(' ');
         self.push_str(ARROW);
-        if declaration.exported {
+        if declaration.is_exported {
             self.push(EXPORT);
         }
         self.push(' ');
@@ -121,7 +121,11 @@ impl Printer {
 const fn starts_with_mutability_glyph(value: &Expression) -> bool {
     matches!(
         value,
-        Expression::ExplicitRef(..) | Expression::Rebind { explicit: true, .. }
+        Expression::ExplicitRef(..)
+            | Expression::Rebind {
+                is_explicit: true,
+                ..
+            }
     )
 }
 

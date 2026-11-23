@@ -379,7 +379,7 @@ mod tests {
         let member = |n: &str, v: Expr| Binding {
             name: n.to_string(),
             value: v,
-            exported: false,
+            is_exported: false,
             span: sp(),
             declared_type: None,
         };

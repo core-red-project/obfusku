@@ -11,7 +11,7 @@ use obfusku_diagnostics::{Diagnostic, Span};
 /// *later* binding will pin down (`SEMANTIC_CORE.md` §19.1).
 struct Pending {
     name: String,
-    exported: bool,
+    is_exported: bool,
     span: Span,
     /// `Some` if the value restriction allowed generalizing.
     generalized: Option<Scheme>,
@@ -48,7 +48,7 @@ impl Pending {
         Ok(TypedBinding {
             name: self.name,
             ty: resolved,
-            exported: self.exported,
+            is_exported: self.is_exported,
         })
     }
 }
@@ -140,7 +140,7 @@ impl Session {
         self.env.insert(binding.name.clone(), scheme);
         self.pending.push(Pending {
             name: binding.name.clone(),
-            exported: binding.exported,
+            is_exported: binding.is_exported,
             span: binding.span,
             generalized,
             raw_ty: inferred,

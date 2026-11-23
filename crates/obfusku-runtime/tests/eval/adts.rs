@@ -91,7 +91,7 @@ fn no_matching_arm_at_runtime_is_reported_as_an_error() {
             obfusku_core::ast::Binding {
                 name: "bad".to_string(),
                 value: match_(ctor("Foo", vec![]), vec![(pctor("Bar", vec![]), int(1))]),
-                exported: false,
+                is_exported: false,
                 span: sp(),
                 declared_type: None,
             },

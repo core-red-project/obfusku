@@ -41,32 +41,32 @@ pub enum FsAccess {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capabilities {
     /// Console lines, standard streams and the terminal query.
-    pub console: bool,
+    pub has_console: bool,
     /// Filesystem scope.
     pub fs: FsAccess,
     /// Environment variables.
-    pub env: bool,
+    pub has_env: bool,
     /// Program arguments.
-    pub args: bool,
+    pub has_args: bool,
     /// Wall clock, monotonic clock and sleeping.
-    pub clock: bool,
+    pub has_clock: bool,
     /// Random numbers.
-    pub random: bool,
+    pub has_random: bool,
     /// Process exit.
-    pub exit: bool,
+    pub has_exit: bool,
 }
 
 /// The capability set a manifest's `[capabilities]` table declares.
 impl Capabilities {
     /// Everything allowed; the meaning of an absent `[capabilities]` table.
     pub const ALL: Capabilities = Capabilities {
-        console: true,
+        has_console: true,
         fs: FsAccess::Project,
-        env: true,
-        args: true,
-        clock: true,
-        random: true,
-        exit: true,
+        has_env: true,
+        has_args: true,
+        has_clock: true,
+        has_random: true,
+        has_exit: true,
     };
 }
 
@@ -233,9 +233,9 @@ fn string_field(
 }
 
 /// A boolean key with a default when absent.
-fn bool_field(path: &Path, t: &Table, key: &str, default: bool) -> Result<bool, Diagnostic> {
+fn bool_field(path: &Path, t: &Table, key: &str, is_default: bool) -> Result<bool, Diagnostic> {
     match t.get(key) {
-        None => Ok(default),
+        None => Ok(is_default),
         Some(Value::Boolean(b)) => Ok(*b),
         Some(_) => Err(invalid_manifest(
             path,
@@ -449,13 +449,13 @@ fn parse_capabilities(path: &Path, t: &Table) -> Result<Capabilities, Diagnostic
         }
     };
     Ok(Capabilities {
-        console: bool_field(path, t, "console", false)?,
+        has_console: bool_field(path, t, "console", false)?,
         fs,
-        env: bool_field(path, t, "env", false)?,
-        args: bool_field(path, t, "args", false)?,
-        clock: bool_field(path, t, "clock", false)?,
-        random: bool_field(path, t, "random", false)?,
-        exit: bool_field(path, t, "exit", false)?,
+        has_env: bool_field(path, t, "env", false)?,
+        has_args: bool_field(path, t, "args", false)?,
+        has_clock: bool_field(path, t, "clock", false)?,
+        has_random: bool_field(path, t, "random", false)?,
+        has_exit: bool_field(path, t, "exit", false)?,
     })
 }
 
@@ -615,12 +615,8 @@ pub fn load_manifest(root: &Path) -> Result<Manifest, Diagnostic> {
 /// [`load_manifest`] over text already in hand (a bundle's embedded copy);
 /// `path` only labels diagnostics.
 pub fn parse_manifest(path: &Path, text: &str) -> Result<Manifest, Diagnostic> {
-    let value: Value = text
-        .parse()
-        .map_err(|e| invalid_manifest(path, format!("malformed TOML: {e}")))?;
-    let table = value
-        .as_table()
-        .ok_or_else(|| invalid_manifest(path, "must be a TOML table at the top level"))?;
+    let table: Table =
+        toml::from_str(text).map_err(|e| invalid_manifest(path, format!("malformed TOML: {e}")))?;
     let format = table
         .get("format")
         .and_then(Value::as_integer)
@@ -634,7 +630,7 @@ pub fn parse_manifest(path: &Path, text: &str) -> Result<Manifest, Diagnostic> {
         ));
     }
     if format == 2 {
-        return parse_v2(path, table);
+        return parse_v2(path, &table);
     }
     // Format 1: tolerant of unknown fields (`ADR-020`).
     let entry = table
@@ -713,7 +709,7 @@ mod tests {
         assert_eq!(m.name.as_deref(), Some("ouro"));
         assert_eq!(m.entry, EntryRef::Path("src/main.obk".into()));
         let caps = m.capabilities.unwrap();
-        assert!(caps.console && caps.args && !caps.env);
+        assert!(caps.has_console && caps.has_args && !caps.has_env);
         assert_eq!(caps.fs, FsAccess::Cwd);
         assert_eq!(m.dependencies.len(), 2);
     }

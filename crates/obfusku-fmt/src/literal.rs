@@ -49,7 +49,7 @@ impl Printer {
     }
 }
 
-fn quote(value: &str, escape_all_non_ascii: bool) -> String {
+fn quote(value: &str, should_escape_all_non_ascii: bool) -> String {
     let mut literal = String::from('"');
     for c in value.chars() {
         match c {
@@ -61,7 +61,7 @@ fn quote(value: &str, escape_all_non_ascii: bool) -> String {
             '\0' => literal.push_str("\\0"),
             c if c.is_control()
                 || canonical_combining_class(c) != 0
-                || (escape_all_non_ascii && !c.is_ascii()) =>
+                || (should_escape_all_non_ascii && !c.is_ascii()) =>
             {
                 let _ = write!(literal, "\\u{{{:X}}}", u32::from(c));
             }

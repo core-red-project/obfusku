@@ -15,13 +15,13 @@ struct Coverage<'a> {
     /// Constructors fully matched by an earlier arm.
     covered: HashSet<&'a str>,
     /// A wildcard or variable arm was seen: every later arm is dead.
-    catch_all: bool,
+    is_catch_all: bool,
 }
 
 impl<'a> Coverage<'a> {
     /// Records `pattern` and returns the warning if it can never match.
     fn visit(&mut self, pattern: &'a Pattern) -> Option<String> {
-        if self.catch_all {
+        if self.is_catch_all {
             return Some(
                 "unreachable match arm: a previous wildcard/variable arm already covers every \
                  remaining case"
@@ -42,7 +42,7 @@ impl<'a> Coverage<'a> {
                 })
             }
             Pattern::Var(..) | Pattern::Wildcard(_) => {
-                self.catch_all = true;
+                self.is_catch_all = true;
                 None
             }
             Pattern::Lit(..) => None,

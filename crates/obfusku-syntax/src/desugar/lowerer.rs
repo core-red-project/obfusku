@@ -111,8 +111,8 @@ impl Lowerer {
         out
     }
 
-    fn set_mutable(&mut self, name: &str, mutable: bool) {
-        if mutable {
+    fn set_mutable(&mut self, name: &str, is_mutable: bool) {
+        if is_mutable {
             self.mut_names.insert(name.to_string());
         } else {
             self.mut_names.remove(name);

@@ -14,8 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// `--quiet` silences warnings; errors and program output are unaffected.
 static QUIET: AtomicBool = AtomicBool::new(false);
 
-pub(super) fn set_quiet(quiet: bool) {
-    QUIET.store(quiet, Ordering::Relaxed);
+pub(super) fn set_quiet(is_quiet: bool) {
+    QUIET.store(is_quiet, Ordering::Relaxed);
 }
 
 /// A host-level error (no source span): printed, exit `2`.

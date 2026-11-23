@@ -110,11 +110,10 @@ fn read_lock(root: &Path) -> Result<Vec<LockEntry>, Diagnostic> {
     let Ok(text) = std::fs::read_to_string(&path) else {
         return Ok(Vec::new());
     };
-    let value: toml::Value = text
-        .parse()
+    let table: toml::Table = toml::from_str(&text)
         .map_err(|e| host_error(format!("invalid lock file '{}': {e}", path.display())))?;
     let mut out = Vec::new();
-    for pkg in value
+    for pkg in table
         .get("package")
         .and_then(toml::Value::as_array)
         .into_iter()
@@ -221,32 +220,37 @@ fn materialize(url: &str, rev: &str) -> Result<PathBuf, String> {
     }
     let parent = dest.parent().expect("package_dir has a parent");
     std::fs::create_dir_all(parent).map_err(|e| format!("could not create cache: {e}"))?;
-    let tmp = parent.join(format!(".{rev}.tmp{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&tmp);
+    let scratch_dir = parent.join(format!(".{rev}.tmp{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&scratch_dir);
     let attempt = (|| -> Result<(), String> {
-        std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
-        git(&["init", "-q"], Some(&tmp))?;
-        git(&["remote", "add", "--", "origin", url], Some(&tmp))?;
+        std::fs::create_dir_all(&scratch_dir).map_err(|e| e.to_string())?;
+        git(&["init", "-q"], Some(&scratch_dir))?;
+        git(&["remote", "add", "--", "origin", url], Some(&scratch_dir))?;
         // Servers that refuse a fetch by hash get a full clone instead.
-        if git(&["fetch", "-q", "--depth", "1", "origin", rev], Some(&tmp)).is_ok() {
-            git(&["checkout", "-q", "FETCH_HEAD"], Some(&tmp))?;
+        if git(
+            &["fetch", "-q", "--depth", "1", "origin", rev],
+            Some(&scratch_dir),
+        )
+        .is_ok()
+        {
+            git(&["checkout", "-q", "FETCH_HEAD"], Some(&scratch_dir))?;
         } else {
-            git(&["fetch", "-q", "origin"], Some(&tmp))?;
-            git(&["checkout", "-q", rev], Some(&tmp))?;
+            git(&["fetch", "-q", "origin"], Some(&scratch_dir))?;
+            git(&["checkout", "-q", rev], Some(&scratch_dir))?;
         }
-        let head = git(&["rev-parse", "HEAD"], Some(&tmp))?;
+        let head = git(&["rev-parse", "HEAD"], Some(&scratch_dir))?;
         if head != rev {
             return Err(format!("expected commit {rev}, got {head}"));
         }
         Ok(())
     })();
     if let Err(e) = attempt {
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&scratch_dir);
         return Err(e);
     }
-    let _ = std::fs::remove_dir_all(tmp.join(".git"));
-    if let Err(e) = std::fs::rename(&tmp, &dest) {
-        let _ = std::fs::remove_dir_all(&tmp);
+    let _ = std::fs::remove_dir_all(scratch_dir.join(".git"));
+    if let Err(e) = std::fs::rename(&scratch_dir, &dest) {
+        let _ = std::fs::remove_dir_all(&scratch_dir);
         // A parallel fetch stored the same commit first: same content.
         if !dest.is_dir() {
             return Err(format!("could not store the dependency: {e}"));
@@ -268,7 +272,7 @@ struct Walker<'a> {
 /// State that exists only while fetching; its absence is what makes
 /// `run`/`check` offline by construction.
 struct FetchState {
-    update: bool,
+    should_update: bool,
     pinned: BTreeMap<(String, String), String>,
     report: Vec<String>,
 }
@@ -305,7 +309,7 @@ impl Walker<'_> {
             };
         };
         let rev = match locked {
-            Some(rev) if !state.update => rev,
+            Some(rev) if !state.should_update => rev,
             _ => resolve_rev(url, reference)
                 .map_err(|e| host_error(format!("dependency '{name}': {e}")))?,
         };
@@ -381,12 +385,16 @@ pub fn load_packages(root: &Path) -> Result<Packages, Diagnostic> {
 /// `obfusku fetch`: resolves every git dependency under `root` (reusing
 /// the lock unless `update`), fills the cache and rewrites `obfusku.lock`.
 /// Returns one report line per git package.
-pub fn fetch(root: &Path, update: bool) -> Result<Vec<String>, Diagnostic> {
-    let lock = if update { Vec::new() } else { read_lock(root)? };
+pub fn fetch(root: &Path, should_update: bool) -> Result<Vec<String>, Diagnostic> {
+    let lock = if should_update {
+        Vec::new()
+    } else {
+        read_lock(root)?
+    };
     let mut walker = Walker {
         lock: &lock,
         fetch: Some(FetchState {
-            update,
+            should_update,
             pinned: BTreeMap::new(),
             report: Vec::new(),
         }),

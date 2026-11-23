@@ -122,7 +122,7 @@ mod tests {
         BindingGroup::Let(Binding {
             name: name.to_string(),
             value: Expr::Lit(Literal::Int(0), at(offset)),
-            exported: false,
+            is_exported: false,
             span: at(offset),
             declared_type: None,
         })

@@ -70,7 +70,7 @@ impl Checker {
         let Some(adt_info) = self.adt_registry.adts.get(adt_name) else {
             return Ok(());
         };
-        if adt_info.open {
+        if adt_info.is_open {
             return Err(Diagnostic::error(
                 format!(
                     "non-exhaustive match: '{adt_name}' is an open type (modules can add \
@@ -173,8 +173,8 @@ mod tests {
         Pattern::Wildcard(span())
     }
 
-    fn boolean(value: bool) -> Pattern {
-        Pattern::Lit(Literal::Bool(value), span())
+    fn boolean(is_true: bool) -> Pattern {
+        Pattern::Lit(Literal::Bool(is_true), span())
     }
 
     fn variant(tag: &str, fields: Vec<CoreType>) -> VariantDecl {

@@ -74,7 +74,7 @@ pub(super) fn lower_module(
         }
         match declaration {
             Declaration::Function(function) => {
-                let binding = lowerer.lower_function_binding(function, function.exported);
+                let binding = lowerer.lower_function_binding(function, function.is_exported);
                 if let Some(binding) = out.keep(binding) {
                     out.run.push(binding);
                 }
@@ -149,11 +149,11 @@ fn lower_value_declaration(lowerer: &mut Lowerer, out: &mut Output, decl: &Value
     out.push_let(core::Binding {
         name: decl.name.clone(),
         value,
-        exported: decl.exported,
+        is_exported: decl.is_exported,
         span: decl.span,
         declared_type: declared_value_type(decl),
     });
-    if decl.mutable {
+    if decl.is_mutable {
         lowerer.mut_names.insert(decl.name.clone());
     }
 }
@@ -167,7 +167,7 @@ fn lower_value_declaration(lowerer: &mut Lowerer, out: &mut Output, decl: &Value
 fn declared_value_type(decl: &ValueDeclaration) -> Option<Type> {
     decl.ty.as_ref().map(|annotation| {
         let ty = lower_type_ref(annotation);
-        if decl.mutable { Type::cell(ty) } else { ty }
+        if decl.is_mutable { Type::cell(ty) } else { ty }
     })
 }
 
@@ -211,7 +211,7 @@ mod tests {
         let [BindingGroup::Let(b)] = own(&m) else {
             panic!("expected one let");
         };
-        assert!(b.exported && b.name == "x");
+        assert!(b.is_exported && b.name == "x");
     }
 
     #[test]

@@ -10,7 +10,7 @@ fn raise_without_catch_is_an_uncaught_error() {
             obfusku_core::ast::Binding {
                 name: "bad".to_string(),
                 value: raise(str_("boom")),
-                exported: false,
+                is_exported: false,
                 span: sp(),
                 declared_type: None,
             },
@@ -52,7 +52,7 @@ fn raise_inside_a_handler_is_not_caught_by_the_same_catch() {
             obfusku_core::ast::Binding {
                 name: "bad".to_string(),
                 value: expr,
-                exported: false,
+                is_exported: false,
                 span: sp(),
                 declared_type: None,
             },

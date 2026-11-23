@@ -9,8 +9,19 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Diagnostics catalog in [`docs/diagnostics.md`](docs/diagnostics.md) detailing all parser, typecheck, and runtime diagnostic codes with explanations, severity levels, and code examples.
+- Domain glossary in [`docs/glossary.md`](docs/glossary.md) standardizing canonical terminology across language syntax, types, evaluator, runtime capabilities, and tooling.
+- Workflow linting via `actionlint` in `Justfile` (`lint-workflows`, wired into `just check`) and `.github/workflows/ci.yml`.
+- Shell script linting via `shellcheck` and format checking via `shfmt` in `Justfile` (`lint-shell`, wired into `just check`).
+
 ### Changed
 
+- Updated dependencies: `toml` to `1.2.2+spec-1.1.0` (with migration to `toml::from_str`), `lsp-server` to `0.10.0`, `serde_json` to `1.0.154`, and `unicode-normalization` to `0.1.26`.
+- Updated GitHub Actions workflow steps across `ci.yml` and `release.yml` to the latest pinned commit SHAs.
+- Standardized boolean field and parameter naming across all crates to predicate prefixes (`is_*`, `has_*`, `should_*`), including manifest `Capabilities` (`has_console`, `has_env`, `has_args`, `has_clock`, `has_random`, `has_exit`), `Binding` (`is_exported`), `ValueDeclaration` (`is_mutable`, `is_exported`), and `FunctionDeclaration` (`is_exported`).
+- Renamed generic filenames and internal identifiers (`infer/data.rs` → `infer/constructors.rs`, `language/data.rs` → `language/algebraic.rs`, `data` → `payload`/`buffer`, `tmp` → `scratch_dir`, `handler` → `handler_expr`, `info` → `variant_meta`) to domain-precise terms.
 - Every crate is documented to `missing_docs` level and reorganized into one module per file, with at most 10 files per folder; large test files are split into themed `tests/<theme>/` directories.
 - `obfusku-core` gains `exception::BUILTIN_EXCEPTIONS`, the single table of built-in `Exception` variants; syntax, typecheck and runtime derive from it instead of keeping copies.
 - `obfusku-runtime` exports `PVec`, `PMap` and `Text` from the crate root; the `pvec`, `pmap` and `text` module paths are gone.

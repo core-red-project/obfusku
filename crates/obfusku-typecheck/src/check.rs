@@ -138,7 +138,7 @@ mod tests {
         BindingGroup::Let(Binding {
             name: name.to_string(),
             value,
-            exported: true,
+            is_exported: true,
             span: span(),
             declared_type: None,
         })
@@ -166,7 +166,7 @@ mod tests {
         let typed = check(&module(vec![binding("n", int(1))])).expect("checks");
         let only = &typed.bindings[0];
         assert_eq!(only.name, "n");
-        assert!(only.exported);
+        assert!(only.is_exported);
         assert!(matches!(
             &only.ty,
             TypeResult::Monomorphic(obfusku_core::types::Type::Int)

@@ -129,7 +129,7 @@ mod tests {
         Binding {
             name: name.to_string(),
             value,
-            exported: false,
+            is_exported: false,
             span: span(),
             declared_type: declared,
         }

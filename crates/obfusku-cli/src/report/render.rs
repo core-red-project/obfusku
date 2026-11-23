@@ -53,8 +53,8 @@ fn escape_json(text: &str, out: &mut String) {
 /// "end_line","end_column"}]}` on one line; `source` is the id of the file
 /// the span belongs to, positions are 1-based and the end is exclusive.
 #[must_use]
-pub fn json(map: &SourceMap, ok: bool, diagnostics: &[Diagnostic]) -> String {
-    let mut out = format!("{{\"ok\":{ok},\"diagnostics\":[");
+pub fn json(map: &SourceMap, is_ok: bool, diagnostics: &[Diagnostic]) -> String {
+    let mut out = format!("{{\"ok\":{is_ok},\"diagnostics\":[");
     for (i, d) in diagnostics.iter().enumerate() {
         if i > 0 {
             out.push(',');

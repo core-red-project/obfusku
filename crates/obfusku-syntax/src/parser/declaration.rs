@@ -59,8 +59,8 @@ impl Parser<'_> {
         self.expect(&TokenKind::Bind, "'≔'")?;
 
         // Fixed order (§8.1): Mutability, then Export.
-        let mutable = self.eat(&TokenKind::Mut);
-        let exported = self.eat(&TokenKind::Export);
+        let is_mutable = self.eat(&TokenKind::Mut);
+        let is_exported = self.eat(&TokenKind::Export);
 
         let value = self.parse_expression()?;
         let span = name_span.merge(value.span());
@@ -68,8 +68,8 @@ impl Parser<'_> {
             name,
             name_span,
             ty,
-            mutable,
-            exported,
+            is_mutable,
+            is_exported,
             value,
             span,
         }))
@@ -244,14 +244,14 @@ impl Parser<'_> {
         // function has no `≔`, so it is `→⟳`. Accepted at any position:
         // §8.4 makes the local restriction a static check, since the grammar
         // shape is identical (see `parse_local_function_bindings`).
-        let exported = self.eat(&TokenKind::Export);
+        let is_exported = self.eat(&TokenKind::Export);
         let body = self.parse_expression()?;
         Ok(FunctionDeclaration {
             name,
             name_span,
             params,
             return_type,
-            exported,
+            is_exported,
             span: start.merge(body.span()),
             body,
         })
@@ -293,7 +293,7 @@ mod tests {
             panic!("expected a value");
         };
         assert_eq!(v.name, "x");
-        assert!(v.ty.is_some() && v.mutable && v.exported);
+        assert!(v.ty.is_some() && v.is_mutable && v.is_exported);
     }
 
     #[test]
@@ -307,7 +307,7 @@ mod tests {
             panic!("expected a function");
         };
         assert_eq!(f.params.len(), 2);
-        assert!(f.exported);
+        assert!(f.is_exported);
         assert!(error("λf(a): ⟁ → a\n❧").contains("':' and a type"));
         assert!(error("λf(a: ⟁) → a\n❧").contains("':' and a return type"));
     }

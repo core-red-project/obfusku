@@ -2,7 +2,7 @@
 //!
 //! `infer` is only a dispatch: every form delegates to a method named for it,
 //! so each rule reads on its own. Forms with enough structure to need their
-//! own file live elsewhere (`data`, `operator`, `matching`, `group`).
+//! own file live elsewhere (`constructors`, `operator`, `matching`, `group`).
 
 use super::{Checker, Infer, TypeEnv, reject};
 use crate::types::{Scheme, Type};

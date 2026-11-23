@@ -25,7 +25,7 @@ pub struct TypedBinding {
     /// Its type.
     pub ty: TypeResult,
     /// Whether importers can see it.
-    pub exported: bool,
+    pub is_exported: bool,
 }
 
 /// The type of a binding: fixed, or generalized over some variables.

@@ -22,7 +22,7 @@ pub(super) fn explicit_captures(expr: &Expression, out: &mut HashSet<String>) {
         }
         Expression::Rebind {
             name,
-            explicit: true,
+            is_explicit: true,
             ..
         } => {
             out.insert(name.clone());

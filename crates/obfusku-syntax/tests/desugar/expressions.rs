@@ -24,7 +24,7 @@ fn reference_lowers_to_var() {
 #[test]
 fn export_flag_survives_lowering_as_plain_metadata() {
     let module = lower_ok("x ≔⟳ 5\n❧");
-    assert!(flat(&module)[0].exported);
+    assert!(flat(&module)[0].is_exported);
 }
 
 #[test]

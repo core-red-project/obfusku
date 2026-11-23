@@ -54,7 +54,7 @@ impl Parser<'_> {
     fn parse_local_value_binding(&mut self) -> PResult<Expression> {
         let (name, name_span) = self.ident("a name")?;
         self.expect(&TokenKind::Bind, "'≔'")?;
-        let mutable = self.eat(&TokenKind::Mut);
+        let is_mutable = self.eat(&TokenKind::Mut);
         if matches!(self.peek(), TokenKind::Export) {
             return Err(self.error(
                 "'⟳' (export) is not valid on a local binding — CONCRETE_SYMBOLIC_GRAMMAR.md \
@@ -68,8 +68,8 @@ impl Parser<'_> {
             name,
             name_span,
             ty: None,
-            mutable,
-            exported: false,
+            is_mutable,
+            is_exported: false,
             value,
             span: decl_span,
         };
@@ -89,7 +89,7 @@ impl Parser<'_> {
         let mut decls = Vec::new();
         loop {
             let function = self.parse_function_declaration()?;
-            if function.exported {
+            if function.is_exported {
                 return Err(self.error(
                     "'⟳' (export) is not valid on a local function declaration — \
                      CONCRETE_SYMBOLIC_GRAMMAR.md §8.4 restricts export to top-level Module \
@@ -250,7 +250,7 @@ impl Parser<'_> {
                 name,
                 name_span,
                 value: Box::new(value),
-                explicit: true,
+                is_explicit: true,
                 span,
             })
         } else {
@@ -273,7 +273,7 @@ impl Parser<'_> {
                 name,
                 name_span: span,
                 value: Box::new(value),
-                explicit: false,
+                is_explicit: false,
                 span: full_span,
             });
         }
@@ -392,11 +392,11 @@ impl Parser<'_> {
     fn parse_catch(&mut self) -> PResult<Expression> {
         let start = self.advance().span; // consume '☊'
         let body = self.parse_expression()?;
-        let handler = self.parse_expression()?;
-        let span = start.merge(handler.span());
+        let handler_expr = self.parse_expression()?;
+        let span = start.merge(handler_expr.span());
         Ok(Expression::Catch {
             body: Box::new(body),
-            handler: Box::new(handler),
+            handler: Box::new(handler_expr),
             span,
         })
     }
@@ -548,13 +548,16 @@ mod tests {
         assert!(matches!(
             expression("x ⚙︎ 1"),
             Expression::Rebind {
-                explicit: false,
+                is_explicit: false,
                 ..
             }
         ));
         assert!(matches!(
             expression("(˚x ⚙︎ 1)"),
-            Expression::Rebind { explicit: true, .. }
+            Expression::Rebind {
+                is_explicit: true,
+                ..
+            }
         ));
         // `v ≔ ˚…` would read as the mutability marker (§8.1), so these are
         // parenthesized.
@@ -568,7 +571,7 @@ mod tests {
             panic!("expected a local value");
         };
         assert_eq!(decl.name, "a");
-        assert!(!decl.exported);
+        assert!(!decl.is_exported);
         assert!(matches!(*body, Expression::BinaryOp { .. }));
     }
 

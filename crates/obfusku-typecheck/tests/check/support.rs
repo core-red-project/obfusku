@@ -88,7 +88,7 @@ pub fn binding(name: &str, value: Expr) -> Binding {
     Binding {
         name: name.to_string(),
         value,
-        exported: false,
+        is_exported: false,
         span: sp(),
         declared_type: None,
     }
@@ -206,7 +206,7 @@ pub fn option_constructor_bindings() -> Vec<Binding> {
                 }),
                 span: sp(),
             },
-            exported: true,
+            is_exported: true,
             span: sp(),
             declared_type: None,
         },
@@ -217,7 +217,7 @@ pub fn option_constructor_bindings() -> Vec<Binding> {
                 args: vec![],
                 span: sp(),
             },
-            exported: true,
+            is_exported: true,
             span: sp(),
             declared_type: None,
         },
@@ -251,7 +251,7 @@ pub fn unary_constructor_binding(tag: &str) -> Binding {
             }),
             span: sp(),
         },
-        exported: true,
+        is_exported: true,
         span: sp(),
         declared_type: None,
     }
@@ -341,7 +341,7 @@ pub fn declared_binding(name: &str, value: Expr, declared_type: CoreType) -> Bin
     Binding {
         name: name.to_string(),
         value,
-        exported: false,
+        is_exported: false,
         span: sp(),
         declared_type: Some(declared_type),
     }

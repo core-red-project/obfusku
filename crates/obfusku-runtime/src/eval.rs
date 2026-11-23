@@ -127,7 +127,7 @@ impl Cur<'_> {
 /// one a native parked).
 pub fn eval(node: &Node, env: &Env) -> EvalResult {
     let mut cx = Ctx::acquire();
-    cx.captured = false;
+    cx.is_captured = false;
     let out = eval_in(node, env, &mut cx);
     cx.release();
     out
@@ -371,7 +371,7 @@ fn step_catch(body: &Node, handler: &Rc<Node>, env: &Env, cx: &mut Ctx) -> Resul
     match ev(body, env, cx) {
         Ok(v) => done(v),
         Err(Raised(payload)) => {
-            cx.captured = false;
+            cx.is_captured = false;
             Ok(Step::Tail(Rc::clone(handler), env.push_one(payload), None))
         }
     }

@@ -46,7 +46,7 @@ pub(super) struct Ctx {
     /// Live function activations, outermost first.
     pub(super) calls: Vec<TraceFrame>,
     /// The raise in flight already has its trace recorded.
-    pub(super) captured: bool,
+    pub(super) is_captured: bool,
 }
 
 impl Ctx {
@@ -75,10 +75,10 @@ impl Ctx {
     /// The raise unwinds through every enclosing frame, each of which would
     /// try to capture; only the innermost (first) sees the full stack.
     pub(super) fn capture(&mut self) {
-        if self.captured {
+        if self.is_captured {
             return;
         }
-        self.captured = true;
+        self.is_captured = true;
         let from = self.calls.len().saturating_sub(TRACE_DEPTH);
         RAISE_TRACE.with(|t| {
             let mut t = t.borrow_mut();

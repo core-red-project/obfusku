@@ -25,9 +25,9 @@ pub(super) fn run(path: &Path, program_args: &[String]) -> ExitCode {
 ///
 /// With `--json` the outcome is one machine-readable object on stdout in
 /// both cases, so a tool never has to parse stderr.
-pub(super) fn check(path: &Path, json: bool) -> ExitCode {
+pub(super) fn check(path: &Path, is_json: bool) -> ExitCode {
     match obfusku_cli::check_file(path) {
-        Ok(warnings) if json => {
+        Ok(warnings) if is_json => {
             // Warnings can only point into the entry file (see
             // `print_warnings`), so a one-file map is enough.
             let mut map = SourceMap::new();
@@ -40,7 +40,7 @@ pub(super) fn check(path: &Path, json: bool) -> ExitCode {
             println!("ok");
             ExitCode::SUCCESS
         }
-        Err((map, diagnostics)) if json => {
+        Err((map, diagnostics)) if is_json => {
             println!("{}", render::json(&map, false, &diagnostics));
             ExitCode::from(1)
         }

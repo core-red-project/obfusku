@@ -119,7 +119,7 @@ pub fn mk_binding(name: &str, value: Expr) -> obfusku_core::ast::Binding {
     obfusku_core::ast::Binding {
         name: name.to_string(),
         value,
-        exported: false,
+        is_exported: false,
         span: sp(),
         declared_type: None,
     }
