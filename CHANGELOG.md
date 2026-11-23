@@ -13,7 +13,7 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Diagnostics catalog in [`docs/diagnostics.md`](docs/diagnostics.md) detailing all parser, typecheck, and runtime diagnostic codes with explanations, severity levels, and code examples.
 - Domain glossary in [`docs/glossary.md`](docs/glossary.md) standardizing canonical terminology across language syntax, types, evaluator, runtime capabilities, and tooling.
-- Workflow linting via `actionlint` in `Justfile` (`lint-workflows`, wired into `just check`) and `.github/workflows/ci.yml`.
+- Workflow linting via `actionlint` in `Justfile` (`lint-workflows`, wired into `just check`).
 - Shell script linting via `shellcheck` and format checking via `shfmt` in `Justfile` (`lint-shell`, wired into `just check`).
 
 ### Changed
